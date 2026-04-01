@@ -306,6 +306,20 @@
         <option value="">-- Select address --</option>
       </select>
     </div>
+    <!-- Payment Method -->
+    <div style="margin-bottom:14px;">
+      <label style="font-size:.8rem;font-weight:600;color:#334155;display:block;margin-bottom:8px;">💳 Payment Method</label>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:2px solid var(--pink);border-radius:10px;cursor:pointer;background:var(--pink-l);font-size:.85rem;font-weight:500;transition:.2s;">
+          <input type="radio" name="paymentMethod" value="online" checked style="accent-color:#E8196B;width:18px;height:18px;"/>
+          <span>💳 Online Payment (UPI / Card)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:2px solid var(--border);border-radius:10px;cursor:pointer;font-size:.85rem;font-weight:500;transition:.2s;">
+          <input type="radio" name="paymentMethod" value="cod" style="accent-color:#E8196B;width:18px;height:18px;"/>
+          <span>💵 Cash on Delivery (COD)</span>
+        </label>
+      </div>
+    </div>
     <button class="btn btn-primary btn-full" onclick="checkout()">Place Order →</button>
   </div>
 </div>
@@ -469,6 +483,7 @@ async function checkout(){
   if(!cart.length){showToast('Cart is empty','error');return;}
   const addrIdx=document.getElementById('cartAddrSel').value;
   if(addrIdx===''){showToast('Select a delivery address','error');return;}
+  const selectedPayMode=document.querySelector('input[name="paymentMethod"]:checked')?.value||'online';
   const addr=CU.addresses[addrIdx];
   const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
   const deliveryCode=Math.floor(100000+Math.random()*900000).toString(); // 6-digit for buyer→delivery confirmation
@@ -494,7 +509,7 @@ async function checkout(){
         sellerId:sid,sellerName:sellerData.name||items[0]?.sellerName||'Seller',
         storeName:sellerData.store?.name||'',
         products:items,totalAmount:itemTotal,
-        status:'pending',paymentMode:'online',paymentStatus:'paid',
+        status:'pending',paymentMode:selectedPayMode,paymentStatus:selectedPayMode==='cod'?'unpaid':'paid',
         address:{...addr},
         deliveryCode, // 6-digit shown to buyer, given to delivery on arrival
         sellerPickupLat,sellerPickupLng,sellerPickupAddr,
@@ -512,16 +527,37 @@ async function checkout(){
 // ── Orders ──
 async function loadOrders(){
   if(!CU)return;
-  const snap=await db.collection('orders').where('userId','==',CU.uid).orderBy('createdAt','desc').get();
+  let snap;
+  try{
+    snap=await db.collection('orders').where('userId','==',CU.uid).orderBy('createdAt','desc').get();
+  }catch(e){
+    // Composite index may not exist — fallback to unordered query
+    console.warn('Orders query with orderBy failed (missing Firestore index?), retrying without orderBy...',e.message);
+    try{
+      snap=await db.collection('orders').where('userId','==',CU.uid).get();
+    }catch(e2){
+      console.error('Failed to load orders:',e2.message);
+      showToast('Could not load orders','error');
+      return;
+    }
+  }
   const orders=snap.docs.map(d=>({id:d.id,...d.data()}));
+  // Sort client-side as fallback
+  orders.sort((a,b)=>{
+    const ta=a.createdAt?.seconds||0;
+    const tb=b.createdAt?.seconds||0;
+    return tb-ta;
+  });
   document.getElementById('so-total').textContent=orders.length;
   document.getElementById('so-delivered').textContent=orders.filter(o=>o.status==='delivered').length;
   document.getElementById('so-active').textContent=orders.filter(o=>!['delivered','cancelled'].includes(o.status)).length;
   document.getElementById('so-spent').textContent=fmtINR(orders.reduce((s,o)=>s+(o.totalAmount||0),0));
   // Populate review selector
-  const delivSnap=await db.collection('orders').where('userId','==',CU.uid).where('status','==','delivered').get();
-  const rSel=document.getElementById('reviewOrderSel');
-  rSel.innerHTML='<option value="">— Pick order —</option>'+delivSnap.docs.map(d=>`<option value="${d.id}">#${d.id.slice(-6)} – ${fmtINR(d.data().totalAmount)}</option>`).join('');
+  try{
+    const delivSnap=await db.collection('orders').where('userId','==',CU.uid).where('status','==','delivered').get();
+    const rSel=document.getElementById('reviewOrderSel');
+    rSel.innerHTML='<option value="">— Pick order —</option>'+delivSnap.docs.map(d=>`<option value="${d.id}">#${d.id.slice(-6)} – ${fmtINR(d.data().totalAmount)}</option>`).join('');
+  }catch(e){console.warn('Could not load delivered orders for reviews:',e.message);}
   allMyOrders = orders; // store for filter
   if(!orders.length){document.getElementById('ordersList').innerHTML='<div class="empty"><div class="e-icon">📦</div><p>No orders yet!</p></div>';return;}
   const stepLabels=['pending','confirmed','packed','shipped','delivered'];
