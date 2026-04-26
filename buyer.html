@@ -41,7 +41,7 @@
 .cat-btn{padding:6px 15px;border:2px solid var(--border);border-radius:50px;background:#fff;font-family:'Poppins',sans-serif;font-size:.8rem;color:var(--gray);cursor:pointer;transition:.25s;}
 .cat-btn.active,.cat-btn:hover{border-color:var(--pink);color:var(--pink);background:var(--pink-l);}
 /* Cart slide */
-.cart-panel{position:fixed;top:0;right:-400px;width:370px;height:100vh;background:#fff;box-shadow:-10px 0 40px rgba(0,0,0,.1);z-index:250;display:flex;flex-direction:column;transition:.35s;}
+.cart-panel{position:fixed;top:0;right:-400px;width:370px;height:100vh;background:#fff;box-shadow:-10px 0 40px rgba(0,0,0,.1);z-index:600;display:flex;flex-direction:column;transition:.35s;}
 .cart-panel.open{right:0;}
 .cart-overlay{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:240;display:none;}
 .cart-overlay.open{display:block;}
@@ -82,6 +82,10 @@
 @media(max-width:640px){.prof-container{grid-template-columns:1fr;}}
 /* Address map btn */
 .gps-btn{padding:8px 13px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-family:'Poppins',sans-serif;font-size:.8rem;cursor:pointer;display:flex;align-items:center;gap:6px;}
+@media(max-width:768px){
+  .sidebar, .cart-panel { bottom: var(--bottomnav-h) !important; height: auto !important; }
+  .sidebar { z-index: 600 !important; }
+}
 </style>
   <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}</script>
 </head>
@@ -284,12 +288,78 @@
   </div>
 </div>
 
+<!-- Online Payment Modal -->
+<div class="modal-overlay" id="paymentModal">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-handle" style="display:block;width:40px;height:4px;border-radius:4px;background:var(--border);margin:12px auto 8px;"></div>
+    <div style="padding:10px 20px;">
+      <h3 style="font-family:'Playfair Display',serif;margin-bottom:4px;">💳 Online Payment</h3>
+      <p style="font-size:.8rem;color:var(--gray);margin-bottom:16px;">Scan QR or use UPI ID to pay</p>
+      
+      <div style="background:#f8fafc;padding:20px;border-radius:14px;text-align:center;border:1px solid var(--border);margin-bottom:16px;">
+        <div id="paymentQR" style="margin:0 auto 12px;width:160px;height:160px;background:#fff;padding:10px;border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid #e2e8f0;"></div>
+        <div style="font-size:.9rem;font-weight:700;color:var(--dark);margin-bottom:2px;" id="paymentUpiId">admin@upi</div>
+        <div style="font-size:.75rem;color:var(--gray);">Click to copy UPI ID</div>
+      </div>
+
+      <div style="margin-bottom:18px;">
+        <label style="font-size:.78rem;font-weight:600;color:var(--dark);display:block;margin-bottom:6px;">Amount to Pay</label>
+        <div style="font-size:1.4rem;font-weight:800;color:var(--pink);" id="paymentAmount">₹0</div>
+      </div>
+
+      <div class="field">
+        <label>Transaction ID / UTR Number</label>
+        <input type="text" id="pay-utr" placeholder="Enter 12-digit UTR number" maxlength="12" style="text-transform:uppercase;font-weight:600;letter-spacing:1px;"/>
+        <small style="color:var(--gray);font-size:.7rem;margin-top:4px;display:block;">Required for verification</small>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button class="btn btn-ghost" onclick="closeModal('paymentModal')" style="flex:1;">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmOnlinePayment()" style="flex:2;" id="confirmPayBtn">Confirm Payment</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Product Detail Modal -->
 <div class="modal-overlay" id="productModal">
   <div class="modal" style="max-width:560px;">
     <div class="modal-handle" style="display:block;width:40px;height:4px;border-radius:4px;background:var(--border);margin:12px auto 0;"></div>
     <button class="modal-close" onclick="closeModal('productModal')">✕</button>
     <div id="productModalContent"></div>
+  </div>
+</div>
+
+<!-- UPI Payment Modal (Direct Fallback) -->
+<div class="modal-overlay" id="upiModal">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-handle" style="display:block;width:40px;height:4px;border-radius:4px;background:var(--border);margin:12px auto 8px;"></div>
+    <div style="padding:10px 20px;">
+      <h3 style="font-family:'Playfair Display',serif;margin-bottom:4px;">📱 UPI Payment</h3>
+      <p style="font-size:.8rem;color:var(--gray);margin-bottom:16px;">Scan QR or use any UPI app to pay</p>
+      
+      <div style="background:#f8fafc;padding:20px;border-radius:14px;text-align:center;border:1px solid var(--border);margin-bottom:16px;">
+        <div id="upiQR" style="margin:0 auto 12px;width:160px;height:160px;background:#fff;padding:10px;border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid #e2e8f0;"></div>
+        <div style="font-size:.92rem;font-weight:700;color:var(--dark);margin-bottom:2px;cursor:pointer;display:inline-block;" id="directUpiId" onclick="copyDirectUpi()">admin@upi</div>
+        <div style="font-size:.7rem;color:var(--gray);margin-top:2px;">(Click to copy UPI ID)</div>
+      </div>
+
+      <div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;">
+        <label style="font-size:.78rem;font-weight:600;color:var(--dark);">Amount to Pay</label>
+        <div style="font-size:1.4rem;font-weight:800;color:var(--pink);" id="upiAmount">₹0</div>
+      </div>
+
+      <div class="field">
+        <label>Transaction ID / UTR Number</label>
+        <input type="text" id="upi-utr" placeholder="Enter 12-digit UTR number" maxlength="12" style="text-transform:uppercase;font-weight:600;letter-spacing:1px;"/>
+        <small style="color:var(--gray);font-size:.7rem;margin-top:4px;display:block;">Enter UTR from GPay/PhonePe</small>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:20px;padding-bottom:10px;">
+        <button class="btn btn-ghost" onclick="closeModal('upiModal')" style="flex:1;">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmDirectUpiPayment()" style="flex:2;">Confirm Payment</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -312,7 +382,11 @@
       <div style="display:flex;flex-direction:column;gap:8px;">
         <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:2px solid var(--pink);border-radius:10px;cursor:pointer;background:var(--pink-l);font-size:.85rem;font-weight:500;transition:.2s;">
           <input type="radio" name="paymentMethod" value="online" checked style="accent-color:#E8196B;width:18px;height:18px;"/>
-          <span>💳 Online Payment (UPI / Card)</span>
+          <span>💳 Online (Card / Netbanking)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:2px solid var(--border);border-radius:10px;cursor:pointer;font-size:.85rem;font-weight:500;transition:.2s;">
+          <input type="radio" name="paymentMethod" value="upi" style="accent-color:#E8196B;width:18px;height:18px;"/>
+          <span>📱 UPI / Google Pay / PhonePe</span>
         </label>
         <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:2px solid var(--border);border-radius:10px;cursor:pointer;font-size:.85rem;font-weight:500;transition:.2s;">
           <input type="radio" name="paymentMethod" value="cod" style="accent-color:#E8196B;width:18px;height:18px;"/>
@@ -361,6 +435,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script src="firebase-config.js"></script>
 <script>
 let CU = null, allProducts = [], cart = JSON.parse(localStorage.getItem('pr_cart')||'[]');
@@ -484,12 +559,84 @@ async function checkout(){
   const addrIdx=document.getElementById('cartAddrSel').value;
   if(addrIdx===''){showToast('Select a delivery address','error');return;}
   const selectedPayMode=document.querySelector('input[name="paymentMethod"]:checked')?.value||'online';
-  const addr=CU.addresses[addrIdx];
   const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
-  const deliveryCode=Math.floor(100000+Math.random()*900000).toString(); // 6-digit for buyer→delivery confirmation
+
+  if(selectedPayMode === 'online') {
+    closeCart(); // Close cart before payment
+    
+    const options = {
+      "key": "rzp_test_Si2bUvaPrFfHDH",
+      "amount": total * 100, // in paise
+      "currency": "INR",
+      "name": "Petal Rush",
+      "description": "Order Payment",
+      "handler": function (response) {
+        processCheckout('online', response.razorpay_payment_id);
+      },
+      "prefill": {
+        "name": CU.name || "",
+        "email": CU.email || "",
+        "contact": CU.phone || ""
+      },
+      "theme": {
+        "color": "#E8196B"
+      },
+      "modal": {
+        "ondismiss": function(){ showToast('Payment cancelled','info'); }
+      },
+      "upi": {
+        "flow": "intent"
+      }
+    };
+    const rzp = new Razorpay(options);
+    rzp.on('payment.failed', function (response){
+      showToast('Payment Failed: ' + response.error.description, 'error');
+    });
+    rzp.open();
+    return;
+  }
+  
+  if(selectedPayMode === 'upi') {
+    closeCart();
+    document.getElementById('upiAmount').textContent = fmtINR(total);
+    let adminUpi = 'itzgoldenheart777@ybl'; 
+    try {
+      const sSnap = await db.collection('settings').doc('general').get();
+      if(sSnap.exists && sSnap.data().upiId) adminUpi = sSnap.data().upiId;
+    } catch(e){}
+    document.getElementById('directUpiId').textContent = adminUpi;
+    const upiUrl = `upi://pay?pa=${adminUpi}&pn=PetalRush&am=${total}&cu=INR`;
+    renderQR('upiQR', upiUrl, 140);
+    document.getElementById('upi-utr').value = '';
+    openModal('upiModal');
+    return;
+  }
+  
+  processCheckout(selectedPayMode, '');
+}
+
+async function confirmDirectUpiPayment() {
+  const utr = document.getElementById('upi-utr').value.trim();
+  if(!utr) { showToast('Please enter Transaction ID','error'); return; }
+  if(utr.length < 8) { showToast('Invalid Transaction ID','error'); return; }
+  await processCheckout('online', utr);
+  closeModal('upiModal');
+}
+
+function copyDirectUpi() {
+  const id = document.getElementById('directUpiId').textContent;
+  navigator.clipboard.writeText(id);
+  showToast('UPI ID Copied');
+}
+
+async function processCheckout(selectedPayMode, transactionId){
+  const addrIdx=document.getElementById('cartAddrSel').value;
+  const addr=CU.addresses[addrIdx];
+  const deliveryCode=Math.floor(100000+Math.random()*900000).toString();
   const bySeller={};
   cart.forEach(item=>{if(!bySeller[item.sellerId])bySeller[item.sellerId]=[];bySeller[item.sellerId].push(item);});
   try{
+    showLoader('Placing your order...');
     for(const[sid,items]of Object.entries(bySeller)){
       const itemTotal=items.reduce((s,i)=>s+i.price*i.qty,0);
       const split2=calcSplit(itemTotal);
@@ -515,13 +662,23 @@ async function checkout(){
         sellerPickupLat,sellerPickupLng,sellerPickupAddr,
         sellerShare:split2.sellerShare,deliveryShare:split2.deliveryShare,adminCommission:split2.adminCommission,
         createdAt:firebase.firestore.FieldValue.serverTimestamp(),
-        estimatedDelivery:new Date(Date.now()+20*60*1000).toISOString()
+        estimatedDelivery:new Date(Date.now()+20*60*1000).toISOString(),
+        transactionId: selectedPayMode==='online'?transactionId:null
       });
-      await db.collection('payments').add({orderId:oRef.id,...split2,totalAmount:itemTotal,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await db.collection('payments').add({
+        orderId:oRef.id,
+        ...split2,
+        totalAmount:itemTotal,
+        status:selectedPayMode==='online'?'paid':'pending',
+        method:selectedPayMode,
+        transactionId:selectedPayMode==='online'?transactionId:null,
+        createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
     }
     cart=[];saveCart();renderCartBody();updateCartBadge();closeCart();
+    hideLoader();
     showToast('Order placed! 🎉');showPage('orders');
-  }catch(e){showToast('Error: '+e.message,'error');}
+  }catch(e){hideLoader(); showToast('Error: '+e.message,'error');}
 }
 
 // ── Orders ──
@@ -594,15 +751,15 @@ function renderOrderCards(orders) {
           <span class="track-link" style="color:#3DB54A;" onclick="showInvoice('${o.id}')">🧾 Invoice</span>
         </div>
       </div>
-      ${isShipped?`<div class="buyer-qr-section">
+      ${isActive && o.deliveryCode ? `<div class="buyer-qr-section">
         <h4>🔑 Your 6-Digit Delivery Code</h4>
-        <p style="font-size:.76rem;color:var(--gray);margin-bottom:6px;">Show this to delivery partner when they arrive. They will enter this code to confirm delivery.</p>
-        <div class="delivery-code">${o.deliveryCode||'------'}</div>
+        <p style="font-size:.76rem;color:var(--gray);margin-bottom:6px;">Provide this code to the delivery partner to complete your delivery.</p>
+        <div class="delivery-code">${o.deliveryCode}</div>
         <div id="buyer-qr-${o.id.slice(-6)}" style="margin-top:8px;"></div>
-      </div>`:''}
+      </div>` : ''}
     </div>`;}).join('');
-  // Render buyer QRs
-  orders.filter(o=>['shipped','out_for_delivery'].includes(o.status)).forEach(o=>{
+  // Render buyer QRs for active orders
+  orders.filter(o=>!['delivered','cancelled'].includes(o.status) && o.deliveryCode).forEach(o=>{
     const containerId='buyer-qr-'+o.id.slice(-6);
     setTimeout(()=>{renderQR(containerId,o.deliveryCode||o.id,120);},100);
   });
@@ -641,12 +798,18 @@ function trackOrder(orderId){
       }
       tick();trackTimerInterval=setInterval(tick,1000);
     }else{document.getElementById('trackTimer').innerHTML='';}
-    // Delivery code if shipped
+    // Delivery code
     const qrDiv=document.getElementById('buyerDeliveryQR');
     qrDiv.innerHTML='';
-    if(['shipped'].includes(o.status)&&o.deliveryCode){
-      qrDiv.innerHTML=`<div class="buyer-qr-section" style="margin-top:0;"><h4>Show to Delivery Partner</h4><div class="delivery-code">${o.deliveryCode}</div><div id="modal-qr"></div></div>`;
-      setTimeout(()=>renderQR('modal-qr',o.deliveryCode,130),50);
+    if(!['delivered','cancelled'].includes(o.status) && o.deliveryCode){
+      qrDiv.innerHTML=`
+        <div class="buyer-qr-section" style="margin-top:20px; border-top:1px dashed var(--border); padding-top:20px;">
+          <h4 style="margin-bottom:8px;">🔑 Delivery Confirmation Code</h4>
+          <p style="font-size:.78rem;color:var(--gray);margin-bottom:12px;">Share this 6-digit code with your delivery partner to verify and complete the order.</p>
+          <div class="delivery-code" style="font-size:1.8rem;letter-spacing:4px;background:var(--pink-l);color:var(--pink);padding:12px;border-radius:12px;border:2px solid var(--pink);">${o.deliveryCode}</div>
+          <div id="modal-qr" style="margin-top:16px;"></div>
+        </div>`;
+      setTimeout(()=>renderQR('modal-qr',o.deliveryCode,140),50);
     }
     document.getElementById('trackModal').classList.add('open');
   });
@@ -778,6 +941,7 @@ async function changePassword(){
   }catch(e){showToast(e.message,'error');}
 }
 
+function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 </script>
 
@@ -842,6 +1006,8 @@ function buildInvoiceHTML(o, orderId, invoiceNo) {
     <tr><td style="color:#888;padding:4px 0;">Billed To</td><td style="font-weight:600;text-align:right;">${o.userEmail||o.userName||'—'}</td></tr>
     <tr><td style="color:#888;padding:4px 0;vertical-align:top;">Deliver To</td><td style="font-weight:600;text-align:right;font-size:.8rem;">${deliverTo}</td></tr>
     <tr><td style="color:#888;padding:4px 0;">Status</td><td style="font-weight:700;text-align:right;color:#E8196B;">${(o.status||'Placed').charAt(0).toUpperCase()+(o.status||'Placed').slice(1)}</td></tr>
+    <tr><td style="color:#888;padding:4px 0;">Payment Mode</td><td style="font-weight:600;text-align:right;">${o.paymentMode==='cod'?'Cash on Delivery':'Online Payment'}</td></tr>
+    ${o.transactionId ? `<tr><td style="color:#888;padding:4px 0;">Transaction ID</td><td style="font-weight:600;text-align:right;font-size:.75rem;">${o.transactionId}</td></tr>` : ''}
   </table>
 
   <!-- Items table -->
