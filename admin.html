@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     /* ─── Admin accent: pink (default) ─── */
     :root { --ac:var(--pink); --ac-d:var(--pink-d); --ac-l:var(--pink-l); }
@@ -97,7 +98,27 @@
       .summary-row{ gap:8px; }
       .summary-chip{ padding:8px 10px; min-width:100px; }
     }
-  </style>
+
+/* Image Previews */
+.img-preview-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.img-prev-item { position: relative; width: 80px; height: 80px; border-radius: 8px; overflow: hidden; border: 2px solid var(--border); background: var(--bg); transition: .2s; }
+.img-prev-item:hover { border-color: var(--pink); }
+.img-prev-item img { width: 100%; height: 100%; object-fit: cover; }
+.img-prev-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(2px); transition: .2s; }
+.img-prev-del:hover { background: #ef4444; transform: scale(1.1); }
+
+/* Modal Sections */
+.modal-section-title { font-size: 0.85rem; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-l); padding-bottom: 5px; margin-bottom: 12px; }
+
+/* Payout tab buttons */
+.tab-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+.tab-btns .btn { flex: 1; justify-content: center; min-width: 120px; }
+
+/* Image Tabs (from seller) */
+.img-tab-row { display: flex; gap: 8px; }
+.img-tab { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-l); font-size: 0.8rem; cursor: pointer; transition: 0.2s; color: var(--text); }
+.img-tab.active { background: var(--pink); color: #fff; border-color: var(--pink); }
+</style>
 </head>
 <body>
 
@@ -233,8 +254,9 @@
           <p>Welcome back, Admin — here's what's happening today.</p>
         </div>
         <div class="btn-group">
+          <button class="btn btn-ghost btn-sm" onclick="loadDashboard(); showToast('Data refreshed','info')">🔄 Refresh Data</button>
           <button class="btn btn-ghost btn-sm">📥 Export</button>
-          <button class="btn btn-primary btn-sm">＋ Add Product</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddProductModal()">➕ Add Product</button>
         </div>
       </div>
 
@@ -421,6 +443,7 @@
                 <th>Amount</th>
                 <th>Status</th>
                 <th class="hide-xs">Payment</th>
+                <th class="hide-xs">Code</th>
                 <th class="hide-xs">Date</th>
                 <th>Actions</th>
               </tr>
@@ -445,7 +468,7 @@
           <p>All products across all sellers</p>
         </div>
         <div class="btn-group">
-          <button class="btn btn-primary btn-sm" onclick="openModal('addProductModal')">＋ Add Product</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddProductModal()">＋ Add Product</button>
         </div>
       </div>
 
@@ -575,12 +598,13 @@
       </div>
       <div class="toolbar">
         <div class="toolbar-row">
-          <input type="search" class="search-inp" id="buyerSearch" placeholder="🔍 Search buyers..."/>
+          <input type="search" class="search-inp" id="buyerSearch" placeholder="🔍 Search buyers..." oninput="filterBuyers()"/>
         </div>
         <div class="toolbar-row-2">
-          <select class="filter-sel">
+          <select class="filter-sel" id="buyerStatusFilter" onchange="filterBuyers()">
             <option value="">All Status</option>
-            <option>Active</option><option>Blocked</option>
+            <option value="active">Active</option>
+            <option value="blocked">Blocked</option>
           </select>
         </div>
       </div>
@@ -592,6 +616,7 @@
                 <th>Buyer</th>
                 <th class="hide-xs">Phone</th>
                 <th class="hide-xs">Orders</th>
+                <th class="hide-xs">Status</th>
                 <th>Spent</th>
                 <th>Actions</th>
               </tr>
@@ -642,25 +667,83 @@
     ══════════════════════════════════════ -->
     <div class="page" id="page-payouts">
       <div class="page-hdr">
-        <div><h1>💸 Payouts</h1><p>Seller payout requests</p></div>
+        <div><h1>💰 Payouts & Ledger</h1><p>Manage payouts and view order income distribution</p></div>
       </div>
-      <div class="card">
-        <div class="table-wrap">
-          <table class="data-table" id="payoutsTable">
-            <thead>
-              <tr>
-                <th>Seller</th>
-                <th>Amount</th>
-                <th class="hide-xs">Method</th>
-                <th>Status</th>
-                <th class="hide-xs">Requested</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="payoutsBody">
-              <tr><td colspan="6" class="wrap" style="text-align:center;color:var(--text-gray);padding:28px">Loading...</td></tr>
-            </tbody>
-          </table>
+
+      <div class="tab-btns">
+        <button class="btn btn-primary" onclick="switchPayoutTab('requests')" id="tabBtnRequests">Payout Requests</button>
+        <button class="btn btn-outline" onclick="switchPayoutTab('ledger')" id="tabBtnLedger">Income Ledger</button>
+        <button class="btn btn-outline" onclick="switchPayoutTab('balances')" id="tabBtnBalances">Partner Balances</button>
+      </div>
+
+      <div id="payoutRequestsSec">
+        <div class="card">
+          <div class="table-wrap">
+            <table class="data-table" id="payoutsTable">
+              <thead>
+                <tr>
+                  <th>Recipient</th>
+                  <th>Amount</th>
+                  <th class="hide-xs">Method</th>
+                  <th>Payment Info</th>
+                  <th>Status</th>
+                  <th class="hide-xs">Requested</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="payoutsBody">
+                <tr><td colspan="7" class="wrap" style="text-align:center;color:var(--text-gray);padding:28px">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="incomeLedgerSec" style="display:none;">
+        <div class="card">
+          <div class="card-title">Income Distribution Ledger (Orders)</div>
+          <p style="font-size: 0.8rem; color: var(--text-gray); margin-bottom: 15px;">Breakdown of funds collected by Admin for each delivered order.</p>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Buyer Paid</th>
+                  <th>Seller Share</th>
+                  <th>Delivery Pay</th>
+                  <th>Admin Fee</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="incomeLedgerBody">
+                <tr><td colspan="6" class="wrap" style="text-align:center;padding:24px">Loading ledger...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="partnerBalancesSec" style="display:none;">
+        <div class="card">
+          <div class="card-title">Partner Balances & Dues</div>
+          <p style="font-size: 0.8rem; color: var(--text-gray); margin-bottom: 15px;">Current dues for all active Sellers and Delivery Partners.</p>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Partner Name</th>
+                  <th>Role</th>
+                  <th>Total Earned</th>
+                  <th>Total Paid</th>
+                  <th>Balance Due</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="balancesBody">
+                <tr><td colspan="6" class="wrap" style="text-align:center;padding:24px">Loading balances...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -699,7 +782,9 @@
       </div>
       <div class="card">
         <div class="card-title">Revenue Chart (Last 7 Days)</div>
-        <div class="chart-placeholder">📊 Revenue chart will appear here</div>
+        <div style="height: 250px;">
+          <canvas id="revChartCanvas"></canvas>
+        </div>
       </div>
     </div>
 
@@ -729,9 +814,36 @@
       </div>
 
       <div class="admin-grid">
+        <!-- Admin Account / Payment Details -->
+        <div class="card">
+          <div class="card-title">Admin Account (Payment Details)</div>
+          <p style="font-size: 0.8rem; color: var(--gray); margin-bottom: 12px;">These details are shown to users for online/UPI payments.</p>
+          <div class="field">
+            <label>Admin UPI ID</label>
+            <input type="text" placeholder="e.g. petalrush@upi" id="settingUpiId"/>
+          </div>
+          <div class="field">
+            <label>Bank Name</label>
+            <input type="text" placeholder="e.g. HDFC Bank" id="settingBankName"/>
+          </div>
+          <div class="field">
+            <label>Account Holder Name</label>
+            <input type="text" placeholder="e.g. Petal Rush Enterprises" id="settingBankHolder"/>
+          </div>
+          <div class="field">
+            <label>Account Number</label>
+            <input type="text" placeholder="e.g. 50100234..." id="settingBankAcc"/>
+          </div>
+          <div class="field">
+            <label>IFSC Code</label>
+            <input type="text" placeholder="e.g. HDFC0001234" id="settingBankIfsc"/>
+          </div>
+          <button class="btn btn-primary btn-full" onclick="saveAdminPaymentSettings()">💾 Save Payment Info</button>
+        </div>
+
         <!-- General Settings -->
         <div class="card">
-          <div class="card-title">General</div>
+          <div class="card-title">General Contact Info</div>
           <div class="field">
             <label>Platform Name</label>
             <input type="text" value="Petal Rush" id="settingPlatformName"/>
@@ -748,7 +860,7 @@
             <label>Default City</label>
             <input type="text" value="Mumbai" id="settingCity"/>
           </div>
-          <button class="btn btn-primary btn-full" onclick="saveGeneralSettings()">💾 Save Settings</button>
+          <button class="btn btn-primary btn-full" onclick="saveGeneralSettings()">💾 Save General Info</button>
         </div>
 
         <!-- Commission & Fee Settings -->
@@ -866,11 +978,15 @@
 
 <!-- Add Product Modal -->
 <div class="modal-overlay" id="addProductModal">
-  <div class="modal">
+  <div class="modal" style="max-width: 600px;">
     <div class="modal-handle"></div>
     <button class="modal-close" onclick="closeModal('addProductModal')">✕</button>
-    <h3>➕ Add New Product</h3>
+    <h3 id="mpTitle">➕ Add New Product</h3>
     <div class="modal-body">
+      <input type="hidden" id="mpEditId"/>
+      
+      <!-- Section: Basic Info -->
+      <div class="modal-section-title">📦 Basic Info</div>
       <div class="field">
         <label>Product Name *</label>
         <input type="text" id="mpName" placeholder="e.g. Red Rose Bouquet"/>
@@ -885,31 +1001,81 @@
           <input type="number" id="mpStock" placeholder="50"/>
         </div>
       </div>
-      <div class="field">
-        <label>Category *</label>
-        <select id="mpCategory">
-          <option value="">Select category...</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Seller *</label>
-        <select id="mpSeller">
-          <option value="">Select seller...</option>
-        </select>
+      <div class="field-row">
+        <div class="field">
+          <label>Category *</label>
+          <select id="mpCategory">
+            <option value="">Select category...</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Seller *</label>
+          <select id="mpSeller">
+            <option value="">Select seller...</option>
+          </select>
+        </div>
       </div>
       <div class="field">
         <label>Description</label>
-        <textarea id="mpDesc" placeholder="Describe the product..."></textarea>
+        <textarea id="mpDesc" placeholder="Describe the product..." rows="3"></textarea>
       </div>
+
+      <!-- Section: Pickup Location -->
+      <div class="modal-section-title" style="margin-top:20px;">📍 Pickup Location</div>
       <div class="field">
-        <label>Product Images</label>
+        <label>Pickup Address *</label>
+        <input type="text" id="mpAddress" placeholder="Detailed pickup address..."/>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>City *</label>
+          <input type="text" id="mpCity" placeholder="City name"/>
+        </div>
+        <div class="field">
+          <label>Pincode *</label>
+          <input type="text" id="mpPincode" placeholder="6-digit pincode"/>
+        </div>
+      </div>
+
+      <!-- Section: Images -->
+      <div class="modal-section-title" style="margin-top:20px;">🖼️ Product Images (max 6)</div>
+      <div class="img-tab-row" style="margin-bottom:10px;">
+        <button class="img-tab active" id="tabUploadAdmin" onclick="setImgModeAdmin('upload')">Upload</button>
+        <button class="img-tab" id="tabUrlAdmin" onclick="setImgModeAdmin('url')">Image URL</button>
+      </div>
+
+      <div id="modeUploadAdmin">
         <div class="img-upload-zone">
           <input type="file" accept="image/*" multiple id="mpImages"/>
-          📷 Tap to add photos
+          📷 Tap to upload photos
         </div>
-        <div class="img-preview-row" id="mpPreview"></div>
       </div>
-      <button class="btn btn-primary btn-full" onclick="addProduct()">🌸 Add Product</button>
+
+      <div id="modeUrlAdmin" style="display:none;">
+        <div class="field-row">
+          <input type="text" id="mpUrlInp" placeholder="https://image-url.com/flower.jpg" style="flex:1; margin-right:8px;"/>
+          <button class="btn btn-ghost" onclick="addUrlImageAdmin()">Add</button>
+        </div>
+      </div>
+
+      <div class="img-preview-row" id="mpPreview"></div>
+      <div id="mpExistingImages" style="display:none; margin-top:10px;"></div>
+
+      <!-- Live Preview Card (Same as seller) -->
+      <div class="modal-section-title" style="margin-top:20px;">👁️ Live Preview</div>
+      <div style="display:flex; justify-content:center; padding:15px; background:var(--bg-l); border-radius:12px; border:1px solid var(--border-l);">
+        <div style="width:100%; max-width:260px; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 4px 15px rgba(0,0,0,0.05); border:1px solid var(--border);">
+          <div id="prevImgAdmin" style="height:160px; background:var(--bg-light); display:flex; align-items:center; justify-content:center; color:var(--gray-l); position:relative;">
+            🌸 Preview
+          </div>
+          <div style="padding:12px; text-align:center;">
+            <h4 id="prevNameAdmin" style="margin:0; font-size:0.95rem; color:var(--dark);">Product Name</h4>
+            <div id="prevPriceAdmin" style="color:var(--pink); font-weight:700; margin-top:4px;">₹0</div>
+          </div>
+        </div>
+      </div>
+      
+      <button class="btn btn-primary btn-full" style="margin-top:25px;" id="btnSaveProduct" onclick="saveProductAdmin()">🌸 Save Product</button>
     </div>
   </div>
 </div>
@@ -1029,9 +1195,7 @@
 
 <!-- ════════ FIREBASE CONFIG ════════ -->
 <!-- YOUR EXISTING FIREBASE CONFIG: keep as-is -->
-<script type="module" src="firebase-config.js"></script>
-
-<!-- ════════ MOBILE PATCH v7 ════════ -->
+<!-- Redundant scripts removed -->
 <script>
 /* ══════════════════════════════════════════════════
    MOBILE PATCH — inline (sidebar, table wrap, BN)
@@ -1086,25 +1250,34 @@ import {
   addDoc, deleteDoc, query, orderBy, limit, where,
   serverTimestamp, onSnapshot, getDoc, setDoc
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 // ─── YOUR FIREBASE CONFIG ───
 // Replace with your actual config from firebase-config.js or paste here:
 // import { app, db, auth } from './firebase-config.js';
 // OR paste config directly:
 const firebaseConfig = {
-  // PASTE YOUR CONFIG HERE
-  // apiKey: "...", authDomain: "...", projectId: "...",
-  // storageBucket: "...", messagingSenderId: "...", appId: "..."
+  apiKey: "AIzaSyAKnTHcyCx_JN06nyukCHGkldWIJh_IU0Y",
+  authDomain: "petal-rush.firebaseapp.com",
+  projectId: "petal-rush",
+  storageBucket: "petal-rush.firebasestorage.app",
+  messagingSenderId: "752572979194",
+  appId: "1:752572979194:web:9da69860122fa24930b643"
 };
 
-let app_inst, auth, db;
+let app_inst, auth, db, storage;
+let allBuyers = [], allSellers = [], allDelivery = [], allOrders = [], allProducts = [], allPayouts = [], allAnnouncements = [];
+let selectedImages = [], existingImgUrls = [];
+
 try {
-  app_inst = initializeApp(firebaseConfig, 'admin-app');
+  app_inst = initializeApp(firebaseConfig);
   auth = getAuth(app_inst);
-  db   = getFirestore(app_inst);
+  db = getFirestore(app_inst);
+  storage = getStorage(app_inst);
+  console.log("Admin Firebase initialized successfully.");
 } catch(e) {
-  // If already initialized (e.g. from firebase-config.js), silently continue
-  console.warn("Firebase init:", e.message);
+  console.error("Firebase init error:", e);
+  showToast("Firebase initialization failed. Please check your config.", "error");
 }
 
 /* ══ TOAST ══ */
@@ -1150,10 +1323,11 @@ window.showPage = function(page, navEl) {
   if (page === 'sellers')   loadSellers();
   if (page === 'buyers')    loadBuyers();
   if (page === 'delivery')  loadDelivery();
-  if (page === 'payouts')   loadPayouts();
+  if (page === 'payouts') { loadPayouts(); }
   if (page === 'revenue')   loadRevenue();
   if (page === 'announcements') loadAnnouncements();
   if (page === 'categories') loadCategories();
+  if (page === 'settings') loadSettings();
 };
 
 window.setActiveBN = function(el) {
@@ -1226,73 +1400,103 @@ window.adminLogout = async function() {
 ══════════════════════════════════════ */
 async function loadDashboard() {
   if (!db) return;
-  document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
+  console.log("Loading dashboard...");
   try {
-    const [orders, sellers, buyers, products, delivery] = await Promise.all([
+    const results = await Promise.allSettled([
       getDocs(collection(db,'orders')),
-      getDocs(collection(db,'sellers')),
-      getDocs(collection(db,'buyers')),
+      getDocs(query(collection(db,'users'), where('role', '==', 'seller'))),
+      getDocs(query(collection(db,'users'), where('role', '==', 'buyer'))),
       getDocs(collection(db,'products')),
-      getDocs(collection(db,'deliveryPartners')),
+      getDocs(query(collection(db,'users'), where('role', '==', 'delivery')))
     ]);
 
-    const ordersData = orders.docs.map(d => ({id:d.id,...d.data()}));
-    const totalRev = ordersData.filter(o=>o.status==='delivered').reduce((s,o)=>s+(o.total||0),0);
-    const pending  = ordersData.filter(o=>o.status==='pending').length;
-    const delivered= ordersData.filter(o=>o.status==='delivered').length;
+    results.forEach((res, i) => {
+      if (res.status === 'rejected') console.error(`Dashboard Query ${i} failed:`, res.reason);
+    });
 
-    document.getElementById('statOrders').textContent   = orders.size;
-    document.getElementById('statRevenue').textContent  = fmtAmt(totalRev);
-    document.getElementById('statSellers').textContent  = sellers.size;
-    document.getElementById('statBuyers').textContent   = buyers.size;
-    document.getElementById('statProducts').textContent = products.size;
-    document.getElementById('statDelivery').textContent = delivery.size;
-    document.getElementById('statPending').textContent  = pending;
-    document.getElementById('statDelivered').textContent= delivered;
-    document.getElementById('sideOrderBadge').textContent = pending;
+    const [orders, sellers, buyers, products, delivery] = results.map(r => r.status === 'fulfilled' ? r.value : {docs:[], size:0});
+
+    allOrders = orders.docs.map(d => ({id:d.id,...d.data()}));
+    allSellers = sellers.docs.map(d => ({id:d.id,...d.data()}));
+    allBuyers = buyers.docs.map(d => ({id:d.id,...d.data()}));
+    allProducts = products.docs.map(d => ({id:d.id,...d.data()}));
+    allDelivery = delivery.docs.map(d => ({id:d.id,...d.data()}));
+    
+    // Stats calculations with fallback for old/new field names
+    const totalRev = allOrders.filter(o=>o.status==='delivered').reduce((s,o)=>s+(o.totalAmount || o.total || 0),0);
+    const orderCount = allOrders.length;
+    const sellerCount = allSellers.length;
+    const buyerCount = allBuyers.length;
+
+    if(document.getElementById('statRevenue')) document.getElementById('statRevenue').textContent = fmtAmt(totalRev);
+    if(document.getElementById('statOrders')) document.getElementById('statOrders').textContent = orderCount;
+    if(document.getElementById('statSellers')) document.getElementById('statSellers').textContent = sellerCount;
+    if(document.getElementById('statBuyers')) document.getElementById('statBuyers').textContent = buyerCount;
+
+    const pending = allOrders.filter(o=>['pending','confirmed','packed'].includes(o.status)).length;
+    const delivered = allOrders.filter(o=>o.status==='delivered').length;
+    
+    if(document.getElementById('statProducts')) document.getElementById('statProducts').textContent = allProducts.length;
+    if(document.getElementById('statDelivery')) document.getElementById('statDelivery').textContent = allDelivery.length;
+    if(document.getElementById('statPending')) document.getElementById('statPending').textContent = pending;
+    if(document.getElementById('statDelivered')) document.getElementById('statDelivered').textContent = delivered;
+    
+    const sideBadge = document.getElementById('sideOrderBadge');
+    if(sideBadge) sideBadge.textContent = pending;
+
+    const timeEl = document.getElementById('lastUpdated');
+    if(timeEl) timeEl.textContent = new Date().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
 
     // Recent orders table
-    const recent = ordersData.slice(0, 6);
-    document.getElementById('dashRecentOrders').innerHTML = recent.length
-      ? recent.map(o=>`<tr>
-          <td><span style="font-weight:600;font-size:.78rem">#${o.id.slice(-6).toUpperCase()}</span></td>
-          <td>${statusBadge(o.status)}</td>
-          <td>${fmtAmt(o.total)}</td>
-          <td class="hide-xs">${o.buyerName||'—'}</td>
-        </tr>`).join('')
-      : `<tr><td colspan="4" class="wrap" style="text-align:center;color:var(--text-gray);padding:20px">No orders yet</td></tr>`;
+    const recentBody = document.getElementById('dashRecentOrders');
+    if (recentBody) {
+      if (allOrders.length === 0) {
+        recentBody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-gray)">No orders yet</td></tr>';
+      } else {
+        recentBody.innerHTML = allOrders.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).slice(0, 5).map(o => `
+          <tr>
+            <td>#${o.id.slice(-6).toUpperCase()}</td>
+            <td>${statusBadge(o.status)}</td>
+            <td>${fmtAmt(o.totalAmount || o.total || 0)}</td>
+            <td class="hide-xs">${o.userName || o.buyerName || '—'}</td>
+          </tr>
+        `).join('');
+      }
+    }
 
-    // Recent sellers
-    const sellersList = sellers.docs.slice(0,5).map(d=>({id:d.id,...d.data()}));
-    document.getElementById('dashNewSellers').innerHTML = sellersList.length
-      ? sellersList.map(s=>`<tr>
-          <td><div class="tbl-user">
-            <div class="tbl-avatar" style="background:linear-gradient(135deg,var(--green),var(--green-d))">${(s.name||'S')[0]}</div>
-            <div>
-              <div class="tbl-user-name">${s.name||'—'}</div>
-              <div class="tbl-user-email">${s.email||'—'}</div>
-            </div>
-          </div></td>
-          <td>${statusBadge(s.status)}</td>
-          <td class="hide-xs">${s.productCount||0}</td>
-        </tr>`).join('')
-      : `<tr><td colspan="3" class="wrap" style="text-align:center;color:var(--text-gray);padding:20px">No sellers yet</td></tr>`;
-
-  } catch(e) {
-    console.error('Dashboard load error:', e);
-    showToast('Error loading dashboard: ' + e.message, 'error');
+    // New sellers list
+    const sellerBody = document.getElementById('dashNewSellers');
+    if (sellerBody) {
+      if (allSellers.length === 0) {
+        sellerBody.innerHTML = '<tr><td colspan="3" class="wrap" style="text-align:center;padding:20px">No sellers found</td></tr>';
+      } else {
+        sellerBody.innerHTML = allSellers.slice(0, 5).map(s => `
+          <tr>
+            <td><div class="tbl-user">
+              <div class="tbl-avatar" style="background:var(--pink)">${(s.name || 'S')[0].toUpperCase()}</div>
+              <div class="tbl-user-name">${s.name || s.storeName || 'Seller'}</div>
+            </div></td>
+            <td>${statusBadge(s.status || 'pending')}</td>
+            <td class="hide-xs">${s.productCount || 0}</td>
+          </tr>
+        `).join('');
+      }
+    }
+  } catch (e) {
+    console.error("Dashboard error:", e);
+    showToast("Error loading dashboard data", "error");
   }
 }
 
 /* ══════════════════════════════════════
    ORDERS
 ══════════════════════════════════════ */
-let allOrders = [];
 async function loadOrders() {
-  if (!db) return;
+  if (!db) { console.error("Firestore not initialized"); return; }
   try {
-    const snap = await getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')));
+    const snap = await getDocs(collection(db,'orders'));
     allOrders = snap.docs.map(d => ({id:d.id,...d.data()}));
+    allOrders.sort((a,b)=> (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
     renderOrders(allOrders);
   } catch(e) { console.error(e); }
 }
@@ -1305,13 +1509,14 @@ function renderOrders(orders) {
   tbody.innerHTML = orders.map(o=>`<tr>
     <td><b>#${o.id.slice(-6).toUpperCase()}</b></td>
     <td><div class="tbl-user">
-      <div class="tbl-avatar" style="background:var(--pink)">${(o.buyerName||'B')[0]}</div>
-      <div class="tbl-user-name">${o.buyerName||'—'}</div>
+      <div class="tbl-avatar" style="background:var(--pink)">${(o.userName || o.buyerName || 'B')[0].toUpperCase()}</div>
+      <div class="tbl-user-name">${o.userName || o.buyerName || '—'}</div>
     </div></td>
-    <td class="hide-xs">${o.sellerName||'—'}</td>
-    <td><b>${fmtAmt(o.total)}</b></td>
+    <td class="hide-xs">${o.sellerName || '—'}</td>
+    <td><b>${fmtAmt(o.totalAmount || o.total)}</b></td>
     <td>${statusBadge(o.status)}</td>
     <td class="hide-xs"><span class="badge ${o.paymentMethod==='cod'?'badge-pending':'badge-delivered'}">${o.paymentMethod||'—'}</span></td>
+    <td class="hide-xs" style="font-family:monospace;font-weight:700;color:var(--pink)">${o.deliveryCode||'—'}</td>
     <td class="hide-xs">${fmtDate(o.createdAt)}</td>
     <td><div class="tbl-actions">
       <button class="btn btn-ghost btn-sm" title="View" onclick="viewOrder('${o.id}')">👁️</button>
@@ -1347,12 +1552,15 @@ window.viewOrder = async function(orderId) {
     const o = {id:snap.id,...snap.data()};
     document.getElementById('orderDetailBody').innerHTML = `
       <div class="info-row"><span class="info-lbl">Order ID</span><span class="info-val">#${o.id.slice(-6).toUpperCase()}</span></div>
-      <div class="info-row"><span class="info-lbl">Buyer</span><span class="info-val">${o.buyerName||'—'}</span></div>
+      <div class="info-row"><span class="info-lbl">Buyer</span><span class="info-val">${o.userName || o.buyerName || '—'}</span></div>
       <div class="info-row"><span class="info-lbl">Seller</span><span class="info-val">${o.sellerName||'—'}</span></div>
-      <div class="info-row"><span class="info-lbl">Total</span><span class="info-val">${fmtAmt(o.total)}</span></div>
+      <div class="info-row"><span class="info-lbl">Total</span><span class="info-val">${fmtAmt(o.totalAmount || o.total)}</span></div>
       <div class="info-row"><span class="info-lbl">Status</span><span class="info-val">${statusBadge(o.status)}</span></div>
       <div class="info-row"><span class="info-lbl">Payment</span><span class="info-val">${o.paymentMethod||'—'}</span></div>
+      <div class="info-row"><span class="info-lbl">Delivery Code</span><span class="info-val" style="font-weight:700;color:var(--pink)">${o.deliveryCode||'—'}</span></div>
       <div class="info-row"><span class="info-lbl">Date</span><span class="info-val">${fmtDate(o.createdAt)}</span></div>
+      ${o.deliveryAddress||o.address?`<div class="info-row"><span class="info-lbl">Delivery Address</span><span class="info-val" style="text-align:right;max-width:58%;font-size:.8rem">${o.deliveryAddress||o.address||'—'}</span></div>`:''}
+      ${o.items?.length?`<div style="margin-top:12px"><div style="font-size:.82rem;font-weight:700;color:var(--text-gray);margin-bottom:6px">ORDER ITEMS</div><div style="display:flex;flex-wrap:wrap;gap:6px">${o.items.map(i=>`<span style="background:var(--pink-l);color:var(--pink);padding:3px 10px;border-radius:50px;font-size:.78rem;font-weight:500">${i.name||i.productName||'Item'} ×${i.qty||i.quantity||1}</span>`).join('')}</div></div>`:''}
       <div style="margin-top:14px">
         <b style="font-size:.84rem">Update Status:</b>
         <div class="btn-group" style="margin-top:8px;flex-wrap:wrap">
@@ -1360,43 +1568,153 @@ window.viewOrder = async function(orderId) {
             `<button class="btn btn-ghost btn-sm" onclick="updateOrderStatus('${o.id}','${s}');closeModal('orderDetailModal')">${s}</button>`
           ).join('')}
         </div>
-      </div>`;
+      </div>
+      ${o.status === 'shipped' ? `
+      <div style="margin-top:14px;padding:12px;background:var(--bg-light);border-radius:8px;border:1px solid var(--border)">
+        <b style="font-size:.84rem">Verify Delivery Code:</b>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input type="text" id="verifyCodeInput" placeholder="6-digit code" class="form-input" style="flex:1;margin-bottom:0">
+          <button class="btn btn-primary btn-sm" onclick="verifyAdminDeliveryCode('${o.id}', '${o.deliveryCode}')">Verify</button>
+        </div>
+      </div>` : ''}`;
   } catch(e) { document.getElementById('orderDetailBody').innerHTML = '<p>Error loading order.</p>'; }
 };
 window.exportOrders = function() {
   if (!allOrders.length) { showToast('No orders to export','warn'); return; }
-  const rows = [['ID','Buyer','Status','Total','Payment','Date'],...allOrders.map(o=>[o.id,o.buyerName,o.status,o.total,o.paymentMethod,fmtDate(o.createdAt)])];
+  const rows = [['ID','Buyer','Status','Total','Payment','Date'],...allOrders.map(o=>[o.id, o.userName || o.buyerName || '—', o.status, o.totalAmount || o.total, o.paymentMethod, fmtDate(o.createdAt)])];
   const csv = rows.map(r=>r.join(',')).join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
   a.download = 'petal-rush-orders.csv'; a.click();
   showToast('CSV exported!','success');
 };
+window.verifyAdminDeliveryCode = async function(orderId, expectedCode) {
+  const entered = document.getElementById('verifyCodeInput').value.trim();
+  if (entered.length !== 6) { showToast('Enter 6 digits', 'warn'); return; }
+  if (entered === expectedCode) {
+    await updateOrderStatus(orderId, 'delivered');
+    showToast('Delivery verified and completed!', 'success');
+    closeModal('orderDetailModal');
+  } else {
+    showToast('Incorrect delivery code', 'error');
+  }
+};
 
 /* ══════════════════════════════════════
    PRODUCTS
 ══════════════════════════════════════ */
-let allProducts = [];
 async function loadProducts() {
   if (!db) return;
   try {
-    const snap = await getDocs(collection(db,'products'));
-    allProducts = snap.docs.map(d=>({id:d.id,...d.data()}));
+    const [prodSnap, userSnap, catSnap] = await Promise.all([
+      getDocs(collection(db,'products')),
+      getDocs(query(collection(db,'users'), where('role', '==', 'seller'))),
+      getDocs(collection(db,'categories'))
+    ]);
+    allProducts = prodSnap.docs.map(d=>({id:d.id,...d.data()}));
+    allSellers = userSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const cats    = catSnap.docs.map(d=>({id:d.id,...d.data()}));
     renderProducts(allProducts);
-    // Populate seller + category dropdowns
-    const sellers = await getDocs(collection(db,'sellers'));
-    const cats    = await getDocs(collection(db,'categories'));
+
     const pSel = document.getElementById('productSellerFilter');
     const pCat = document.getElementById('productCatFilter');
     const mpSel = document.getElementById('mpSeller');
     const mpCat = document.getElementById('mpCategory');
-    sellers.docs.forEach(d=>{
-      [pSel,mpSel].forEach(el=>{ if(el){const o=document.createElement('option');o.value=d.id;o.textContent=d.data().name||d.id;el.appendChild(o);} });
+    if(pSel) pSel.innerHTML = '<option value="">All Sellers</option>';
+    if(pCat) pCat.innerHTML = '<option value="">All Categories</option>';
+    if(mpSel) mpSel.innerHTML = '<option value="">Select Seller</option>';
+    if(mpCat) mpCat.innerHTML = '<option value="">Select Category</option>';
+
+    allSellers.forEach(s=>{
+      [pSel,mpSel].forEach(el=>{ if(el){const o=document.createElement('option');o.value=s.id;o.textContent=s.name||s.id;el.appendChild(o);} });
     });
-    cats.docs.forEach(d=>{
-      [pCat,mpCat].forEach(el=>{ if(el){const o=document.createElement('option');o.value=d.id;o.textContent=d.data().name||d.id;el.appendChild(o);} });
+    // Add Admin option for product creation
+    if(mpSel){
+       const o=document.createElement('option'); o.value='admin'; o.textContent='🌸 Admin (Internal)'; mpSel.appendChild(o);
+    }
+    cats.forEach(c=>{
+      [pCat,mpCat].forEach(el=>{ if(el){const o=document.createElement('option');o.value=c.slug;o.textContent=c.name||c.slug;el.appendChild(o);} });
     });
   } catch(e){ console.error(e); }
+}
+
+window.previewImagesAdmin = function(){
+  const input = document.getElementById('mpImages');
+  if(!input) return;
+  const files = Array.from(input.files);
+  const totalSlots = 6;
+  const currentCount = selectedImages.length + existingImgUrls.length;
+  const remaining = totalSlots - currentCount;
+  
+  if(files.length > remaining){
+    showToast(`Max 6 images allowed total.`,'warn');
+  }
+  
+  const newFiles = files.slice(0, remaining);
+  selectedImages = [...selectedImages, ...newFiles];
+  renderImagePreviewsAdmin();
+}
+
+function renderImagePreviewsAdmin(){
+  const prev = document.getElementById('mpPreview');
+  if(!prev) return;
+  prev.innerHTML = '';
+  selectedImages.forEach((file, index)=>{
+    const reader = new FileReader();
+    reader.onload = e => {
+      const d = document.createElement('div');
+      d.className = 'img-prev-item';
+      d.innerHTML = `<img src="${e.target.result}"/><button class="img-prev-del" onclick="removeSelectedImageAdmin(${index})">✕</button>`;
+      prev.appendChild(d);
+    };
+    reader.readAsDataURL(file);
+  });
+  updatePreviewImgAdmin();
+}
+
+window.removeSelectedImageAdmin = function(index){
+  selectedImages.splice(index, 1);
+  renderImagePreviewsAdmin();
+}
+
+window.removeExistingImageAdmin = function(index){
+  existingImgUrls.splice(index, 1);
+  renderExistingPreviewsAdmin();
+}
+
+function renderExistingPreviewsAdmin(){
+  const ex = document.getElementById('mpExistingImages');
+  if(!ex) return;
+  if(!existingImgUrls.length){ex.style.display='none';return;}
+  ex.style.display='block';
+  ex.innerHTML = '<div style="font-size:.8rem;font-weight:600;color:var(--gray);margin-bottom:6px;">Existing Images</div><div class="img-preview-row">' + 
+    existingImgUrls.map((u, i) => `<div class="img-prev-item"><img src="${u}"/><button class="img-prev-del" onclick="removeExistingImageAdmin(${i})">✕</button></div>`).join('') + '</div>';
+  updatePreviewImgAdmin();
+}
+
+document.addEventListener('change', e => {
+  if(e.target && e.target.id === 'mpImages') previewImagesAdmin();
+});
+
+document.addEventListener('input', e => {
+  if(e.target && ['mpName', 'mpPrice'].includes(e.target.id)) updatePreviewAdmin();
+});
+
+function updatePreviewAdmin() {
+  const name = document.getElementById('mpName').value || 'Product Name';
+  const price = document.getElementById('mpPrice').value || '0';
+  document.getElementById('prevNameAdmin').textContent = name;
+  document.getElementById('prevPriceAdmin').textContent = '₹' + price;
+}
+
+function updatePreviewImgAdmin() {
+  const pImg = document.getElementById('prevImgAdmin');
+  const all = [...existingImgUrls];
+  if(all.length > 0) {
+    pImg.innerHTML = `<img src="${all[0]}" style="width:100%; height:100%; object-fit:cover;"/>`;
+  } else {
+    pImg.innerHTML = '🌸 Preview';
+  }
 }
 function renderProducts(products) {
   const tbody = document.getElementById('productsBody');
@@ -1425,28 +1743,165 @@ window.filterProducts = function(){
   const stk= document.getElementById('productStockFilter')?.value||'';
   renderProducts(allProducts.filter(p=>{
     const mQ  = !q  || (p.name||'').toLowerCase().includes(q);
-    const mCat= !cat|| p.categoryId===cat;
+    const mCat= !cat|| p.category===cat;
     const mSel= !sel|| p.sellerId===sel;
     const mStk= !stk|| (stk==='instock'?(p.stock||0)>0:(p.stock||0)===0);
     return mQ&&mCat&&mSel&&mStk;
   }));
 };
-window.addProduct = async function() {
+window.editProduct = async function(id) {
   if(!db) return;
-  const name = document.getElementById('mpName').value.trim();
-  const price= parseFloat(document.getElementById('mpPrice').value)||0;
-  const stock= parseInt(document.getElementById('mpStock').value)||0;
-  const cat  = document.getElementById('mpCategory').value;
-  const seller=document.getElementById('mpSeller').value;
-  const desc = document.getElementById('mpDesc').value.trim();
-  if(!name||!price||!cat||!seller){showToast('Fill all required fields','warn');return;}
   try {
-    await addDoc(collection(db,'products'),{name,price,stock,categoryId:cat,sellerId:seller,description:desc,createdAt:serverTimestamp()});
-    showToast('Product added!','success');
+    const snap = await getDoc(doc(db, 'products', id));
+    if(!snap.exists()) return;
+    const p = snap.data();
+    
+    document.getElementById('mpEditId').value = id;
+    document.getElementById('mpTitle').textContent = "✏️ Edit Product";
+    document.getElementById('mpName').value = p.name || '';
+    document.getElementById('mpPrice').value = p.price || '';
+    document.getElementById('mpStock').value = p.stock || '';
+    document.getElementById('mpCategory').value = p.category || '';
+    document.getElementById('mpSeller').value = p.sellerId || '';
+    document.getElementById('mpDesc').value = p.description || '';
+    
+    // Pickup fields
+    document.getElementById('mpAddress').value = p.pickupAddress || '';
+    document.getElementById('mpCity').value = p.pickupCity || '';
+    document.getElementById('mpPincode').value = p.pickupPincode || '';
+    
+    selectedImages = [];
+    existingImgUrls = p.images || [];
+    document.getElementById('mpPreview').innerHTML = '';
+    renderExistingPreviewsAdmin();
+    
+    setImgModeAdmin('upload');
+    openModal('addProductModal');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+window.saveProductAdmin = async function() {
+  if(!db) return;
+  const editId = document.getElementById('mpEditId').value;
+  const name = document.getElementById('mpName').value.trim();
+  const price = parseFloat(document.getElementById('mpPrice').value) || 0;
+  const stock = parseInt(document.getElementById('mpStock').value) || 0;
+  const cat = document.getElementById('mpCategory').value;
+  const sellerId = document.getElementById('mpSeller').value;
+  const desc = document.getElementById('mpDesc').value.trim();
+  const pickupAddress = document.getElementById('mpAddress').value.trim();
+  const pickupCity = document.getElementById('mpCity').value.trim();
+  const pickupPincode = document.getElementById('mpPincode').value.trim();
+
+  if(!name || !cat || !sellerId || !pickupAddress || !pickupCity || !pickupPincode){
+    showToast('Please fill all required fields (*)','warn'); return;
+  }
+  if(selectedImages.length + existingImgUrls.length === 0){
+    showToast('Add at least one image','warn'); return;
+  }
+  
+  if(!name || !price || !cat || !sellerId) { showToast('Fill all required fields', 'warn'); return; }
+  
+  const btn = document.getElementById('btnSaveProduct');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+  
+  try {
+    let finalUrls = [...existingImgUrls];
+    
+    // Upload new images
+    for(const file of selectedImages) {
+      const storageRef = ref(storage, `products/admin/${Date.now()}_${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      finalUrls.push(url);
+    }
+    
+    if(finalUrls.length < 1) { showToast('At least 1 image required', 'warn'); btn.disabled = false; btn.textContent = '🌸 Save Product'; return; }
+    if(finalUrls.length > 6) { showToast('Max 6 images allowed', 'warn'); btn.disabled = false; btn.textContent = '🌸 Save Product'; return; }
+
+    const seller = allSellers.find(s => s.id === sellerId);
+    const data = {
+      name, price, stock, category: cat, sellerId, 
+      sellerName: seller?.name || 'Admin',
+      storeName: seller?.storeName || seller?.name || 'Admin Store',
+      description: desc,
+      pickupAddress,
+      pickupCity,
+      pickupPincode,
+      images: finalUrls.slice(0, 6),
+      updatedAt: serverTimestamp()
+    };
+    
+    if(editId) {
+      await updateDoc(doc(db, 'products', editId), data);
+      showToast('Product updated!', 'success');
+    } else {
+      data.createdAt = serverTimestamp();
+      await addDoc(collection(db, 'products'), data);
+      showToast('Product added!', 'success');
+    }
+    
     closeModal('addProductModal');
+    clearProductFormAdmin();
     loadProducts();
-  } catch(e){showToast('Error: '+e.message,'error');}
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  btn.disabled = false;
+  btn.textContent = '🌸 Save Product';
 };
+
+function clearProductFormAdmin() {
+  ['mpEditId', 'mpName', 'mpPrice', 'mpStock', 'mpDesc', 'mpAddress', 'mpCity', 'mpPincode', 'mpUrlInp'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  document.getElementById('mpCategory').value = '';
+  document.getElementById('mpSeller').value = '';
+  document.getElementById('mpTitle').textContent = "➕ Add New Product";
+  document.getElementById('mpPreview').innerHTML = '';
+  document.getElementById('mpExistingImages').style.display = 'none';
+  selectedImages = [];
+  existingImgUrls = [];
+  setImgModeAdmin('upload');
+}
+
+window.setImgModeAdmin = function(mode){
+  const uploadDiv = document.getElementById('modeUploadAdmin');
+  const urlDiv = document.getElementById('modeUrlAdmin');
+  const tabUpload = document.getElementById('tabUploadAdmin');
+  const tabUrl = document.getElementById('tabUrlAdmin');
+  
+  if(mode === 'url'){
+    uploadDiv.style.display = 'none';
+    urlDiv.style.display = 'block';
+    tabUrl.classList.add('active');
+    tabUpload.classList.remove('active');
+  } else {
+    uploadDiv.style.display = 'block';
+    urlDiv.style.display = 'none';
+    tabUpload.classList.add('active');
+    tabUrl.classList.remove('active');
+  }
+}
+
+window.addUrlImageAdmin = function(){
+  const inp = document.getElementById('mpUrlInp');
+  const url = inp.value.trim();
+  if(!url) return;
+  if(selectedImages.length + existingImgUrls.length >= 6){
+    showToast('Max 6 images total','warn'); return;
+  }
+  existingImgUrls.push(url);
+  inp.value = '';
+  renderExistingPreviewsAdmin();
+}
+
+window.openAddProductModal = function(){
+  clearProductFormAdmin();
+  updatePreviewAdmin();
+  updatePreviewImgAdmin();
+  openModal('addProductModal');
+}
 window.deleteProduct = async function(id){
   if(!db||!confirm('Delete this product?')) return;
   try{ await deleteDoc(doc(db,'products',id)); showToast('Deleted','success'); loadProducts(); }
@@ -1496,11 +1951,10 @@ window.deleteCategory = async function(id){
 /* ══════════════════════════════════════
    SELLERS
 ══════════════════════════════════════ */
-let allSellers = [];
 async function loadSellers() {
   if(!db) return;
   try {
-    const snap = await getDocs(collection(db,'sellers'));
+    const snap = await getDocs(query(collection(db,'users'), where('role', '==', 'seller')));
     allSellers = snap.docs.map(d=>({id:d.id,...d.data()}));
     renderSellers(allSellers);
   } catch(e){console.error(e);}
@@ -1516,7 +1970,7 @@ function renderSellers(sellers) {
         <div class="tbl-user-email">${s.email||'—'}</div>
       </div>
     </div></td>
-    <td>${s.storeName||'—'}</td>
+    <td>${s.storeName || s.name || '—'}</td>
     <td class="hide-xs">${s.phone||'—'}</td>
     <td>${statusBadge(s.status||'pending')}</td>
     <td class="hide-xs">${s.orderCount||0}</td>
@@ -1538,7 +1992,7 @@ window.filterSellers = function(){
 window.updateSellerStatus = async function(id, status){
   if(!db||!confirm(`Set seller status to "${status}"?`)) return;
   try {
-    await updateDoc(doc(db,'sellers',id),{status,updatedAt:serverTimestamp()});
+    await updateDoc(doc(db,'users',id),{status,updatedAt:serverTimestamp()});
     showToast(`Seller ${status}!`,status==='active'?'success':'warn');
     loadSellers();
   } catch(e){showToast('Error: '+e.message,'error');}
@@ -1549,33 +2003,73 @@ window.updateSellerStatus = async function(id, status){
 ══════════════════════════════════════ */
 async function loadBuyers() {
   if(!db) return;
+  const tbody = document.getElementById('buyersBody');
   try {
-    const snap = await getDocs(collection(db,'buyers'));
-    const buyers = snap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById('buyersBody').innerHTML = buyers.length
-      ? buyers.map(b=>`<tr>
-          <td><div class="tbl-user">
-            <div class="tbl-avatar" style="background:var(--blue)">${(b.name||'B')[0]}</div>
-            <div>
-              <div class="tbl-user-name">${b.name||'—'}</div>
-              <div class="tbl-user-email">${b.email||'—'}</div>
-            </div>
-          </div></td>
-          <td class="hide-xs">${b.phone||'—'}</td>
-          <td class="hide-xs">${b.orderCount||0}</td>
-          <td><b>${fmtAmt(b.totalSpent||0)}</b></td>
-          <td><div class="tbl-actions">
-            <button class="btn btn-danger btn-sm" title="Block" onclick="blockBuyer('${b.id}')">🚫</button>
-          </div></td>
-        </tr>`).join('')
-      : `<tr><td colspan="5" class="wrap" style="text-align:center;padding:24px">No buyers found</td></tr>`;
-  } catch(e){console.error(e);}
+    // If allOrders is empty, we might need to fetch them
+    if(allOrders.length === 0) {
+      const snap = await getDocs(collection(db, 'orders'));
+      allOrders = snap.docs.map(d=>({id:d.id,...d.data()}));
+    }
+    
+    const snap = await getDocs(query(collection(db,'users'), where('role', '==', 'buyer')));
+    allBuyers = snap.docs.map(d=>{
+      const data = d.data();
+      const myOrders = allOrders.filter(o => o.userId === d.id || o.buyerId === d.id);
+      const spent = myOrders.filter(o=>o.status==='delivered').reduce((s,o)=>s+(o.totalAmount || o.total || 0), 0);
+      return {
+        id:d.id,
+        ...data,
+        orderCount: myOrders.length,
+        totalSpent: spent
+      };
+    });
+    renderBuyers(allBuyers);
+  } catch(e){
+    console.error(e);
+    if(tbody) tbody.innerHTML = `<tr><td colspan="5" class="wrap" style="text-align:center;padding:24px;color:var(--danger)">Error loading buyers.</td></tr>`;
+  }
 }
+function renderBuyers(buyers) {
+  const tbody = document.getElementById('buyersBody');
+  if(!buyers.length){tbody.innerHTML=`<tr><td colspan="5" class="wrap" style="text-align:center;padding:24px">No buyers found</td></tr>`;return;}
+  tbody.innerHTML = buyers.map(b=>`<tr>
+    <td><div class="tbl-user">
+      <div class="tbl-avatar" style="background:var(--blue)">${(b.name||'B')[0]}</div>
+      <div>
+        <div class="tbl-user-name">${b.name||'—'}</div>
+        <div class="tbl-user-email">${b.email||'—'}</div>
+      </div>
+    </div></td>
+    <td class="hide-xs">${b.phone||'—'}</td>
+    <td class="hide-xs">${b.orderCount||0}</td>
+    <td class="hide-xs">${statusBadge(b.status||'active')}</td>
+    <td><b>${fmtAmt(b.totalSpent||0)}</b></td>
+    <td><div class="tbl-actions">
+      ${(b.status==='blocked')?`<button class="btn btn-green btn-sm" onclick="unblockBuyer('${b.id}')">✅</button>`:`<button class="btn btn-danger btn-sm" onclick="blockBuyer('${b.id}')">🚫</button>`}
+    </div></td>
+  </tr>`).join('');
+}
+window.filterBuyers = function(){
+  const q  = document.getElementById('buyerSearch')?.value.toLowerCase()||'';
+  const st = document.getElementById('buyerStatusFilter')?.value||'';
+  renderBuyers(allBuyers.filter(b=>{
+    const mQ  = !q  || JSON.stringify(b).toLowerCase().includes(q);
+    const mSt = !st || (b.status||'active')===st;
+    return mQ&&mSt;
+  }));
+};
 window.blockBuyer = async function(id){
   if(!db||!confirm('Block this buyer?')) return;
   try{
-    await updateDoc(doc(db,'buyers',id),{status:'blocked'});
+    await updateDoc(doc(db,'users',id),{status:'blocked'});
     showToast('Buyer blocked','warn'); loadBuyers();
+  } catch(e){showToast('Error: '+e.message,'error');}
+};
+window.unblockBuyer = async function(id){
+  if(!db||!confirm('Unblock this buyer?')) return;
+  try{
+    await updateDoc(doc(db,'users',id),{status:'active'});
+    showToast('Buyer unblocked!','success'); loadBuyers();
   } catch(e){showToast('Error: '+e.message,'error');}
 };
 
@@ -1584,25 +2078,32 @@ window.blockBuyer = async function(id){
 ══════════════════════════════════════ */
 async function loadDelivery() {
   if(!db) return;
+  const tbody = document.getElementById('deliveryBody');
   try {
-    const snap = await getDocs(collection(db,'deliveryPartners'));
+    const snap = await getDocs(query(collection(db,'users'), where('role', '==', 'delivery')));
     const partners = snap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById('deliveryBody').innerHTML = partners.length
-      ? partners.map(p=>`<tr>
-          <td><div class="tbl-user">
-            <div class="tbl-avatar" style="background:var(--orange)">${(p.name||'D')[0]}</div>
-            <div class="tbl-user-name">${p.name||'—'}</div>
-          </div></td>
-          <td class="hide-xs">${p.phone||'—'}</td>
-          <td>${statusBadge(p.status||'active')}</td>
-          <td class="hide-xs">${p.deliveryCount||0}</td>
-          <td class="hide-xs"><b>${fmtAmt(p.earnings||0)}</b></td>
-          <td><div class="tbl-actions">
-            <button class="btn btn-danger btn-sm" title="Suspend" onclick="suspendPartner('${p.id}')">🚫</button>
-          </div></td>
-        </tr>`).join('')
-      : `<tr><td colspan="6" class="wrap" style="text-align:center;padding:24px">No delivery partners</td></tr>`;
-  } catch(e){console.error(e);}
+    renderDelivery(partners);
+  } catch(e){
+    console.error(e);
+    if(tbody) tbody.innerHTML = `<tr><td colspan="6" class="wrap" style="text-align:center;padding:24px;color:var(--danger)">Error loading partners.</td></tr>`;
+  }
+}
+function renderDelivery(partners) {
+  const tbody = document.getElementById('deliveryBody');
+  if(!partners.length){tbody.innerHTML=`<tr><td colspan="6" class="wrap" style="text-align:center;padding:24px">No partners found</td></tr>`;return;}
+  tbody.innerHTML = partners.map(p=>`<tr>
+    <td><div class="tbl-user">
+      <div class="tbl-avatar" style="background:var(--orange)">${(p.name||'D')[0].toUpperCase()}</div>
+      <div class="tbl-user-name">${p.name||'—'}</div>
+    </div></td>
+    <td class="hide-xs">${p.phone||'—'}</td>
+    <td>${statusBadge(p.status||'active')}</td>
+    <td class="hide-xs">${p.deliveryCount||0}</td>
+    <td class="hide-xs"><b>${fmtAmt(p.earnings||0)}</b></td>
+    <td><div class="tbl-actions">
+      <button class="btn btn-danger btn-sm" title="Suspend" onclick="suspendPartner('${p.id}')">🚫</button>
+    </div></td>
+  </tr>`).join('');
 }
 window.addDeliveryPartner = async function(){
   if(!db) return;
@@ -1612,13 +2113,13 @@ window.addDeliveryPartner = async function(){
   const vehicle = document.getElementById('dpVehicle').value;
   if(!name||!phone){showToast('Name & phone required','warn');return;}
   try {
-    await addDoc(collection(db,'deliveryPartners'),{name,phone,email,vehicle,status:'active',deliveryCount:0,earnings:0,createdAt:serverTimestamp()});
+    await addDoc(collection(db,'users'),{name,phone,email,vehicle,role:'delivery',status:'active',deliveryCount:0,earnings:0,createdAt:serverTimestamp()});
     showToast('Partner added!','success'); closeModal('addDeliveryModal'); loadDelivery();
   } catch(e){showToast('Error: '+e.message,'error');}
 };
 window.suspendPartner = async function(id){
   if(!db||!confirm('Suspend this partner?')) return;
-  try{ await updateDoc(doc(db,'deliveryPartners',id),{status:'suspended'}); showToast('Suspended','warn'); loadDelivery(); }
+  try{ await updateDoc(doc(db,'users',id),{status:'suspended'}); showToast('Suspended','warn'); loadDelivery(); }
   catch(e){showToast('Error: '+e.message,'error');}
 };
 
@@ -1627,24 +2128,239 @@ window.suspendPartner = async function(id){
 ══════════════════════════════════════ */
 async function loadPayouts() {
   if(!db) return;
+  const tbody = document.getElementById('payoutsBody');
   try {
     const snap = await getDocs(collection(db,'payoutRequests'));
-    const payouts = snap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById('payoutsBody').innerHTML = payouts.length
+    const payoutsRaw = snap.docs.map(d=>({id:d.id,...d.data()}));
+    
+    // Enrich with seller names and info if missing
+    const payouts = await Promise.all(payoutsRaw.map(async p => {
+      if(!p.sellerName || !p.paymentInfo) {
+        const uSnap = await getDoc(doc(db, 'users', p.sellerId));
+        if(uSnap.exists()) {
+          const u = uSnap.data();
+          p.sellerName = u.name || u.storeName || 'Seller';
+          p.paymentInfo = p.method === 'UPI' ? (u.bank?.upi || u.upi || 'N/A') : `${u.bank?.bank || ''} ${u.bank?.accNo || ''}`;
+        }
+      }
+      return p;
+    }));
+
+    if(tbody) tbody.innerHTML = payouts.length
       ? payouts.map(p=>`<tr>
           <td>${p.sellerName||'—'}</td>
           <td><b>${fmtAmt(p.amount)}</b></td>
           <td class="hide-xs">${p.method||'UPI'}</td>
+          <td><code style="font-size:.7rem">${p.paymentInfo || 'N/A'}</code></td>
           <td>${statusBadge(p.status||'pending')}</td>
           <td class="hide-xs">${fmtDate(p.createdAt)}</td>
           <td><div class="tbl-actions">
-            <button class="btn btn-green btn-sm" onclick="approvePayout('${p.id}')">✅</button>
-            <button class="btn btn-danger btn-sm" onclick="rejectPayout('${p.id}')">❌</button>
+            ${(p.status === 'pending' || !p.status) ? `
+              <button class="btn btn-green btn-sm" onclick="approvePayout('${p.id}')" title="Approve">✅</button>
+              <button class="btn btn-danger btn-sm" onclick="rejectPayout('${p.id}')" title="Reject">❌</button>
+            ` : `<span style="font-size:0.8rem; color:var(--text-gray)">Processed</span>`}
           </div></td>
         </tr>`).join('')
-      : `<tr><td colspan="6" class="wrap" style="text-align:center;padding:24px">No payout requests</td></tr>`;
-  } catch(e){console.error(e);}
+      : `<tr><td colspan="7" class="wrap" style="text-align:center;padding:24px">No payout requests</td></tr>`;
+  } catch(e){
+    console.error(e);
+    if(tbody) tbody.innerHTML = `<tr><td colspan="6" class="wrap" style="text-align:center;padding:24px;color:var(--danger)">Error loading payouts.</td></tr>`;
+  }
 }
+window.switchPayoutTab = function(tab) {
+  const reqSec = document.getElementById('payoutRequestsSec');
+  const ledSec = document.getElementById('incomeLedgerSec');
+  const balSec = document.getElementById('partnerBalancesSec');
+  const btnReq = document.getElementById('tabBtnRequests');
+  const btnLed = document.getElementById('tabBtnLedger');
+  const btnBal = document.getElementById('tabBtnBalances');
+
+  reqSec.style.display = 'none';
+  ledSec.style.display = 'none';
+  balSec.style.display = 'none';
+  btnReq.className = 'btn btn-outline';
+  btnLed.className = 'btn btn-outline';
+  btnBal.className = 'btn btn-outline';
+
+  if(tab === 'requests') {
+    reqSec.style.display = 'block';
+    btnReq.className = 'btn btn-primary';
+    loadPayouts();
+  } else if(tab === 'ledger') {
+    ledSec.style.display = 'block';
+    btnLed.className = 'btn btn-primary';
+    loadIncomeLedger();
+  } else {
+    balSec.style.display = 'block';
+    btnBal.className = 'btn btn-primary';
+    loadSettlements();
+  }
+};
+
+async function loadSettlements() {
+  if(!db) return;
+  const tbody = document.getElementById('balancesBody');
+  try {
+    // 1. Get all users who are sellers or delivery
+    const userSnap = await getDocs(query(collection(db, 'users'), where('role', 'in', ['seller', 'delivery'])));
+    const users = userSnap.docs.map(d=>({id:d.id,...d.data()}));
+
+    // 2. Get all orders to calculate total earned
+    if(allOrders.length === 0) {
+      const orderSnap = await getDocs(collection(db, 'orders'));
+      allOrders = orderSnap.docs.map(d=>({id:d.id,...d.data()}));
+    }
+    const delivered = allOrders.filter(o => o.status === 'delivered');
+
+    // 3. Get all approved payouts
+    const payoutSnap = await getDocs(query(collection(db, 'payoutRequests'), where('status', '==', 'approved')));
+    const payouts = payoutSnap.docs.map(d=>d.data());
+
+    // 4. Get fee settings
+    let sellerSplitPct = 0.80;
+    const feeSnap = await getDoc(doc(db, 'settings', 'fees'));
+    if(feeSnap.exists()) {
+      sellerSplitPct = (feeSnap.data().sellerSplit || 80) / 100;
+    }
+
+    const data = users.map(u => {
+      let earned = 0;
+      if(u.role === 'seller') {
+        earned = delivered.filter(o => o.sellerId === u.id).reduce((s, o) => s + ((o.totalAmount || o.total || 0) * sellerSplitPct), 0);
+      } else {
+        earned = delivered.filter(o => o.deliveryPartnerId === u.id).reduce((s, o) => s + ((o.totalAmount || o.total || 0) * 0.10), 0);
+      }
+
+      const paid = payouts.filter(p => p.sellerId === u.id || p.userId === u.id).reduce((s, p) => s + (p.amount || 0), 0);
+      const balance = earned - paid;
+
+      return { ...u, earned, paid, balance };
+    });
+
+    if(tbody) tbody.innerHTML = data.map(u => `<tr>
+      <td>
+        <div style="font-weight:600">${u.name || 'Partner'}</div>
+        <small style="color:var(--text-gray)">${u.storeName || ''}</small>
+      </td>
+      <td><span class="badge badge-${u.role === 'seller' ? 'active' : 'pending'}">${u.role}</span></td>
+      <td>${fmtAmt(u.earned)}</td>
+      <td>${fmtAmt(u.paid)}</td>
+      <td><b style="color:${u.balance > 0 ? 'var(--danger)' : 'var(--green-d)'}">${fmtAmt(u.balance)}</b></td>
+      <td>
+        <button class="btn btn-primary btn-sm" onclick="showSettlementInfo('${u.id}')">Settlement Info</button>
+      </td>
+    </tr>`).join('');
+
+    // Save data for modal
+    window.allPartnerBalances = data;
+
+  } catch(e) {
+    console.error(e);
+    if(tbody) tbody.innerHTML = `<tr><td colspan="6" class="wrap" style="text-align:center;padding:24px;color:var(--danger)">Error loading settlements.</td></tr>`;
+  }
+}
+
+window.showSettlementInfo = function(userId) {
+  const u = window.allPartnerBalances.find(p => p.id === userId);
+  if(!u) return;
+  const existing = document.getElementById('settlementModal');
+  if(existing) existing.remove();
+  const info = u.bank ? `
+    <div class="info-row"><span class="info-lbl">Holder</span><span class="info-val">${u.bank.holder||'N/A'}</span></div>
+    <div class="info-row"><span class="info-lbl">Bank</span><span class="info-val">${u.bank.bank||'N/A'}</span></div>
+    <div class="info-row"><span class="info-lbl">A/C No</span><span class="info-val">${u.bank.accNo||'N/A'}</span></div>
+    <div class="info-row"><span class="info-lbl">IFSC</span><span class="info-val">${u.bank.ifsc||'N/A'}</span></div>
+    <div class="info-row"><span class="info-lbl">UPI</span><span class="info-val">${u.bank.upi||'N/A'}</span></div>
+  ` : `<p style="color:var(--text-gray);font-size:.85rem;padding:10px 0">No bank details on file for this partner.</p>`;
+  const balColor = u.balance > 0 ? 'var(--red)' : 'var(--green-d)';
+  const modal = document.createElement('div');
+  modal.id = 'settlementModal';
+  modal.className = 'modal-overlay open';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:440px;border-radius:var(--radius-lg)">
+      <div class="modal-handle"></div>
+      <button class="modal-close" onclick="document.getElementById('settlementModal').remove()">✕</button>
+      <h3>💳 ${u.name||'Partner'} — Settlement</h3>
+      <div class="modal-body">
+        <div style="background:var(--surface2);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid var(--border);text-align:center">
+          <div style="font-size:.8rem;color:var(--text-gray)">Balance Due</div>
+          <div style="font-size:1.8rem;font-weight:700;color:${balColor}">${fmtAmt(u.balance)}</div>
+          <div style="font-size:.75rem;color:var(--text-gray);margin-top:4px">Total Earned: ${fmtAmt(u.earned)} &nbsp;·&nbsp; Total Paid: ${fmtAmt(u.paid)}</div>
+        </div>
+        <div style="font-size:.78rem;font-weight:700;color:var(--text-gray);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Payment Details</div>
+        ${info}
+        <p style="font-size:.78rem;color:var(--text-gray);margin-top:12px;padding:10px;background:var(--orange-l);border-radius:8px;border:1px solid var(--border)">⚠️ Transfer this amount via your bank/UPI app to the account above, then click the button to record the payment.</p>
+        ${u.balance > 0 ? `<button class="btn btn-green btn-full" style="margin-top:14px" onclick="markAsSettled('${u.id}',${u.balance})">✅ Mark as Paid — ${fmtAmt(u.balance)}</button>` : `<div style="text-align:center;padding:12px;color:var(--green-d);font-weight:600">✅ No outstanding balance</div>`}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) modal.remove(); });
+};
+
+window.markAsSettled = async function(userId, amount) {
+  if(!db || amount <= 0 || !confirm(`Mark ${fmtAmt(amount)} as paid to this partner?`)) return;
+  const u = window.allPartnerBalances.find(p => p.id === userId);
+  try {
+    await addDoc(collection(db, 'payoutRequests'), {
+      sellerId: userId,
+      sellerName: u ? (u.name || u.storeName) : 'Partner',
+      amount: amount,
+      status: 'approved',
+      method: 'Manual Settlement',
+      paymentInfo: 'Settled by Admin direct to account',
+      createdAt: serverTimestamp(),
+      processedAt: serverTimestamp()
+    });
+    showToast('Settlement recorded!', 'success');
+    const smEl = document.getElementById('settlementModal'); if(smEl) smEl.remove();
+    switchPayoutTab('balances');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+};
+
+async function loadIncomeLedger() {
+  if(!db) return;
+  const tbody = document.getElementById('incomeLedgerBody');
+  try {
+    if(allOrders.length === 0) {
+      const snap = await getDocs(collection(db, 'orders'));
+      allOrders = snap.docs.map(d=>({id:d.id,...d.data()}));
+    }
+
+    // Get fee settings
+    let sellerSplitPct = 0.80;
+    const feeSnap = await getDoc(doc(db, 'settings', 'fees'));
+    if(feeSnap.exists()) {
+      sellerSplitPct = (feeSnap.data().sellerSplit || 80) / 100;
+    }
+
+    const delivered = allOrders.filter(o => o.status === 'delivered');
+    
+    if(tbody) tbody.innerHTML = delivered.length 
+      ? delivered.map(o => {
+          const total = o.totalAmount || o.total || 0;
+          const sellerShare = total * sellerSplitPct;
+          const deliveryPay = total * 0.10; // 10% for delivery
+          const adminFee = total - sellerShare - deliveryPay;
+          
+          return `<tr>
+            <td><small>#${o.id.slice(-6).toUpperCase()}</small></td>
+            <td><b style="color:var(--primary)">${fmtAmt(total)}</b></td>
+            <td><span style="color:var(--green-d)">${fmtAmt(sellerShare)}</span></td>
+            <td><span style="color:var(--orange)">${fmtAmt(deliveryPay)}</span></td>
+            <td><span style="color:var(--gray)">${fmtAmt(adminFee)}</span></td>
+            <td><span class="badge badge-delivered">Delivered</span></td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="6" class="wrap" style="text-align:center;padding:24px">No delivered orders found.</td></tr>`;
+  } catch(e) {
+    console.error(e);
+    if(tbody) tbody.innerHTML = `<tr><td colspan="6" class="wrap" style="text-align:center;padding:24px;color:var(--danger)">Error loading ledger.</td></tr>`;
+  }
+}
+
 window.approvePayout = async function(id){
   if(!db||!confirm('Approve this payout?')) return;
   try{ await updateDoc(doc(db,'payoutRequests',id),{status:'approved',processedAt:serverTimestamp()}); showToast('Payout approved!','success'); loadPayouts(); }
@@ -1659,20 +2375,82 @@ window.rejectPayout = async function(id){
 /* ══════════════════════════════════════
    REVENUE
 ══════════════════════════════════════ */
+let revenueChart = null;
 async function loadRevenue() {
   if(!db) return;
   try {
-    const snap = await getDocs(query(collection(db,'orders'),where('status','==','delivered')));
-    const orders = snap.docs.map(d=>d.data());
-    const total  = orders.reduce((s,o)=>s+(o.total||0),0);
-    const sellerPay = total * 0.80;
-    const deliveryCut= total * 0.08;
+    if(allOrders.length === 0) {
+      const snap = await getDocs(collection(db, 'orders'));
+      allOrders = snap.docs.map(d=>({id:d.id,...d.data()}));
+    }
+    
+    // Get fee settings
+    let sellerSplit = 0.80;
+    const feeSnap = await getDoc(doc(db, 'settings', 'fees'));
+    if(feeSnap.exists()) {
+      sellerSplit = (feeSnap.data().sellerSplit || 80) / 100;
+    }
+
+    const delivered = allOrders.filter(o=>o.status==='delivered');
+    const total  = delivered.reduce((s,o)=>s+(o.totalAmount || o.total || 0),0);
+    const sellerPay = total * sellerSplit;
+    const deliveryCut= total * 0.08; // Fixed delivery cut for now
     const net  = total - sellerPay - deliveryCut;
-    document.getElementById('revTotal').textContent   = fmtAmt(total);
-    document.getElementById('revSeller').textContent  = fmtAmt(sellerPay);
-    document.getElementById('revDelivery').textContent= fmtAmt(deliveryCut);
-    document.getElementById('revNet').textContent     = fmtAmt(net);
-  } catch(e){console.error(e);}
+    
+    if(document.getElementById('revTotal')) document.getElementById('revTotal').textContent   = fmtAmt(total);
+    if(document.getElementById('revSeller')) document.getElementById('revSeller').textContent  = fmtAmt(sellerPay);
+    if(document.getElementById('revDelivery')) document.getElementById('revDelivery').textContent= fmtAmt(deliveryCut);
+    if(document.getElementById('revNet')) document.getElementById('revNet').textContent     = fmtAmt(net);
+
+    // Render Chart
+    const canvas = document.getElementById('revChartCanvas');
+    if(canvas) {
+       if(revenueChart) revenueChart.destroy();
+       
+       const last7Days = [...Array(7)].map((_, i) => {
+         const d = new Date();
+         d.setDate(d.getDate() - (6 - i));
+         return d.toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+       });
+       
+       const dailyRev = last7Days.map((dateStr, idx) => {
+         const targetDate = new Date();
+         targetDate.setDate(targetDate.getDate() - (6 - idx));
+         return delivered.filter(o => {
+           const od = o.createdAt?.toDate ? o.createdAt.toDate() : (o.createdAt ? new Date(o.createdAt) : null);
+           if(!od || isNaN(od.getTime())) return false;
+           return od.getDate()===targetDate.getDate() && od.getMonth()===targetDate.getMonth() && od.getFullYear()===targetDate.getFullYear();
+         }).reduce((s,o)=>s+(o.totalAmount || o.total || 0), 0);
+       });
+
+       revenueChart = new Chart(canvas, {
+         type: 'line',
+         data: {
+           labels: last7Days,
+           datasets: [{
+             label: 'Revenue (₹)',
+             data: dailyRev,
+             borderColor: '#E8196B',
+             backgroundColor: 'rgba(232, 25, 107, 0.1)',
+             fill: true,
+             tension: 0.4
+           }]
+         },
+         options: {
+           responsive: true,
+           maintainAspectRatio: false,
+           plugins: { legend: { display: false } },
+           scales: {
+             y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+             x: { grid: { display: false } }
+           }
+         }
+       });
+    }
+  } catch(e){
+    console.error(e);
+    showToast("Error loading revenue data","error");
+  }
 }
 
 /* ══════════════════════════════════════
@@ -1727,6 +2505,7 @@ window.saveGeneralSettings = async function(){
     email:        document.getElementById('settingEmail').value,
     phone:        document.getElementById('settingPhone').value,
     city:         document.getElementById('settingCity').value,
+    upiId:        document.getElementById('settingUpiId').value.trim(),
     updatedAt:    serverTimestamp()
   };
   try{ await setDoc(doc(db,'settings','general'),data,{merge:true}); showToast('Settings saved!','success'); }
@@ -1744,6 +2523,52 @@ window.saveFeeSettings = async function(){
   try{ await setDoc(doc(db,'settings','fees'),data,{merge:true}); showToast('Fee settings saved!','success'); }
   catch(e){showToast('Error: '+e.message,'error');}
 };
+
+window.saveAdminPaymentSettings = async function(){
+  if(!db) return;
+  const data = {
+    upiId:      document.getElementById('settingUpiId').value.trim(),
+    bankName:   document.getElementById('settingBankName').value.trim(),
+    bankHolder: document.getElementById('settingBankHolder').value.trim(),
+    bankAcc:    document.getElementById('settingBankAcc').value.trim(),
+    bankIfsc:   document.getElementById('settingBankIfsc').value.trim(),
+    updatedAt:  serverTimestamp()
+  };
+  try{ await setDoc(doc(db,'settings','payment'),data,{merge:true}); showToast('Payment details saved!','success'); }
+  catch(e){showToast('Error: '+e.message,'error');}
+};
+
+async function loadSettings() {
+  if(!db) return;
+  try {
+    const genSnap = await getDoc(doc(db, 'settings', 'general'));
+    if(genSnap.exists()) {
+      const d = genSnap.data();
+      document.getElementById('settingPlatformName').value = d.platformName || 'Petal Rush';
+      document.getElementById('settingEmail').value = d.email || '';
+      document.getElementById('settingPhone').value = d.phone || '';
+      document.getElementById('settingCity').value = d.city || 'Mumbai';
+    }
+    const paySnap = await getDoc(doc(db, 'settings', 'payment'));
+    if(paySnap.exists()) {
+      const d = paySnap.data();
+      document.getElementById('settingUpiId').value = d.upiId || '';
+      document.getElementById('settingBankName').value = d.bankName || '';
+      document.getElementById('settingBankHolder').value = d.bankHolder || '';
+      document.getElementById('settingBankAcc').value = d.bankAcc || '';
+      document.getElementById('settingBankIfsc').value = d.bankIfsc || '';
+    }
+    const feeSnap = await getDoc(doc(db, 'settings', 'fees'));
+    if(feeSnap.exists()) {
+      const d = feeSnap.data();
+      document.getElementById('settingPlatformFee').value = d.platformFee || 10;
+      document.getElementById('settingSellerSplit').value = d.sellerSplit || 80;
+      document.getElementById('settingDeliveryFee').value = d.deliveryFee || 40;
+      document.getElementById('settingFreeDelivery').value = d.freeDeliveryAbove || 500;
+    }
+  } catch(e){console.error(e);}
+}
+
 window.updateAdminProfile = async function(){
   if(!auth) return;
   const name = document.getElementById('settingAdminName').value.trim();
