@@ -159,19 +159,23 @@
 
   <!-- EARNINGS -->
   <div id="page-earnings" class="page">
-    <div class="page-hdr"><div><h1>💰 Earnings</h1><p>Your delivery income</p></div></div>
+    <div class="page-hdr"><div><h1>💰 Earnings</h1><p>Your delivery income and payouts</p></div></div>
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-icon">💵</div><div class="stat-val" id="e-total">₹0</div><div class="stat-lbl">Total Earned</div></div>
-      <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-val" id="e-pending">₹0</div><div class="stat-lbl">Pending Payout</div></div>
-      <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-val" id="e-week">₹0</div><div class="stat-lbl">This Week</div></div>
+      <div class="stat-card"><div class="stat-icon">💵</div><div class="stat-val" id="e-total">₹0</div><div class="stat-lbl">Lifetime Earned</div></div>
+      <div class="stat-card" style="background:#f0f9ff;"><div class="stat-icon">⏳</div><div class="stat-val" id="e-pending" style="color:var(--blue);">₹0</div><div class="stat-lbl">Available to Withdraw</div></div>
+      <div class="stat-card" style="background:#f0fff4;"><div class="stat-icon">✅</div><div class="stat-val" id="e-paid" style="color:var(--green-d);">₹0</div><div class="stat-lbl">Total Paid Out</div></div>
     </div>
+    
+    <div style="margin:20px 0;">
+      <button class="btn btn-primary btn-full" onclick="requestPayoutDP()" id="payoutBtnDP">Request Payout</button>
+    </div>
+
     <div class="card">
       <div class="card-title">Payout Info</div>
       <div class="info-row"><span class="info-lbl">Your rate per order</span><span class="info-val" style="color:var(--blue);">10%</span></div>
-      <div class="info-row"><span class="info-lbl">Payout cycle</span><span class="info-val">Weekly (Every Monday)</span></div>
       <div class="info-row"><span class="info-lbl">Payment via</span><span class="info-val">UPI / Bank Transfer</span></div>
     </div>
-    <div class="card"><div class="card-title">Payment History</div><div id="earningsHistory"></div></div>
+    <div class="card"><div class="card-title">Payout & Earnings History</div><div id="earningsHistory"></div></div>
   </div>
 
   <!-- HISTORY -->
@@ -554,11 +558,53 @@ async function loadEarnings(){
   if(!CU)return;
   const snap=await db.collection('orders').where('deliveryPartnerId','==',CU.uid).where('status','==','delivered').get();
   const orders=snap.docs.map(d=>({id:d.id,...d.data()}));
-  const total=orders.reduce((s,o)=>s+Math.round((o.totalAmount||0)*.1),0);
-  document.getElementById('e-total').textContent=fmtINR(total);
-  document.getElementById('e-pending').textContent=fmtINR(Math.round(total*.3));
-  document.getElementById('e-week').textContent=fmtINR(Math.round(total*.2));
-  document.getElementById('earningsHistory').innerHTML=orders.length?orders.map(o=>`<div class="info-row"><span class="info-lbl">#${o.id.slice(-6)} · ${fmtDate(o.createdAt)}</span><span class="info-val" style="color:var(--blue);">${fmtINR(Math.round((o.totalAmount||0)*.1))}</span></div>`).join(''):'<div class="empty" style="padding:20px 0;"><p>No earnings yet</p></div>';
+  
+  // Total Earned (10% of order total)
+  const totalEarned=orders.reduce((s,o)=>s+Math.round((o.totalAmount||o.total||0)*.1),0);
+  
+  // Total Paid (from approved payoutRequests)
+  const paySnap = await db.collection('payoutRequests').where('sellerId','==',CU.uid).where('status','==','approved').get(); // Using sellerId field for compatibility
+  const totalPaid = paySnap.docs.reduce((s, d) => s + (d.data().amount || 0), 0);
+  
+  const balance = totalEarned - totalPaid;
+
+  document.getElementById('e-total').textContent=fmtINR(totalEarned);
+  document.getElementById('e-pending').textContent=fmtINR(balance);
+  document.getElementById('e-paid').textContent=fmtINR(totalPaid);
+
+  document.getElementById('payoutBtnDP').disabled = balance <= 0;
+
+  const historySnap=await db.collection('payoutRequests').where('sellerId','==',CU.uid).orderBy('createdAt','desc').limit(10).get();
+  document.getElementById('earningsHistory').innerHTML=historySnap.docs.length
+    ? historySnap.docs.map(d=>{
+        const p=d.data();
+        return `<div class="info-row"><span class="info-lbl">${fmtDate(p.createdAt)}</span><span class="info-val" style="color:var(--blue);">${fmtINR(p.amount||0)} <span class="badge badge-${p.status==='approved'?'delivered':'pending'}">${cap(p.status||'pending')}</span></span></div>`;
+      }).join('')
+    : orders.map(o=>`<div class="info-row"><span class="info-lbl">#${o.id.slice(-6)} · ${fmtDate(o.createdAt)}</span><span class="info-val" style="color:var(--blue);">${fmtINR(Math.round((o.totalAmount||0)*.1))}</span></div>`).join('');
+}
+
+async function requestPayoutDP() {
+  const pendingText = document.getElementById('e-pending').textContent;
+  const amount = parseInt(pendingText.replace(/[^0-9]/g, ''));
+  if(amount <= 0) return;
+  
+  if(!confirm(`Request payout for ${fmtINR(amount)}?`)) return;
+  
+  try {
+    await db.collection('payoutRequests').add({
+      sellerId: CU.uid, // Using sellerId field for Admin panel compatibility
+      sellerName: CU.name || 'Delivery Partner',
+      amount: amount,
+      status: 'pending',
+      method: CU.bank?.upi ? 'UPI' : 'Bank',
+      paymentInfo: CU.bank?.upi || (CU.bank?.accNo || 'Check Bank Details'),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showToast('Payout request sent! ✅');
+    loadEarnings();
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
 // HISTORY
