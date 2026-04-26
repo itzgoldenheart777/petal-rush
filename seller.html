@@ -46,6 +46,14 @@
 .color-chip.selected{border-color:var(--dark);}
 /* QR modal */
 .order-qr-wrap{text-align:center;padding:14px 0;}
+
+/* Image Previews */
+.img-preview-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.img-prev-item { position: relative; width: 80px; height: 80px; border-radius: 8px; overflow: hidden; border: 2px solid var(--border); background: var(--bg); transition: .2s; }
+.img-prev-item:hover { border-color: var(--accent); }
+.img-prev-item img { width: 100%; height: 100%; object-fit: cover; }
+.img-prev-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(2px); transition: .2s; }
+.img-prev-del:hover { background: #ef4444; transform: scale(1.1); }
 </style>
   <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}</script>
 </head>
@@ -141,7 +149,9 @@
           <div class="field-row">
             <div class="field"><label>Product Name *</label><input type="text" id="p-name" placeholder="Red Rose Bouquet"/></div>
             <div class="field"><label>Category *</label>
-              <select id="p-cat"><option value="roses">🌹 Roses</option><option value="lilies">🌷 Lilies</option><option value="bouquets">💐 Bouquets</option><option value="seasonal">🌻 Seasonal</option><option value="exotic">🌺 Exotic</option></select>
+              <select id="p-cat">
+                <option value="">Loading categories...</option>
+              </select>
             </div>
           </div>
           <div class="field-row">
@@ -167,30 +177,16 @@
       <div>
         <div class="card">
           <div class="card-title">📷 Product Images</div>
-          <div class="img-tab-row">
-            <button class="img-tab active" id="imgTabUpload" onclick="setImgTab('upload')">📁 Upload</button>
-            <button class="img-tab" id="imgTabLink" onclick="setImgTab('link')">🔗 Image URL</button>
+          <p style="font-size:0.75rem;color:var(--gray);margin-bottom:12px;">Add 1-6 high-quality images of your product.</p>
+          
+          <div id="imagePreview" class="img-preview-row"></div>
+          <div id="existingImages" style="margin-top:12px;"></div>
+
+          <div class="img-upload-zone" onclick="document.getElementById('p-images').click()" style="cursor:pointer; margin-top:15px;">
+            <input type="file" id="p-images" multiple accept="image/*" onchange="previewImages()" style="display:none;"/>
+            <div style="font-size:1.6rem;margin-bottom:6px;">📁</div>
+            <p style="font-size:.83rem;color:var(--gray);">Tap to select images</p>
           </div>
-          <!-- Upload section -->
-          <div id="imgSectionUpload">
-            <div class="img-upload-zone">
-              <input type="file" id="p-images" multiple accept="image/*" onchange="previewImages()"/>
-              <div style="font-size:1.6rem;margin-bottom:6px;">📷</div>
-              <p style="font-size:.83rem;color:var(--gray);">Click to upload (min 1, max 6 images)</p>
-            </div>
-            <div class="img-preview-row" id="imagePreview"></div>
-          </div>
-          <!-- Link section -->
-          <div id="imgSectionLink" style="display:none;">
-            <div id="imgLinkInputs">
-              <div class="img-link-row">
-                <input class="img-link-inp" type="url" placeholder="https://example.com/image.jpg" id="imgLink0"/>
-                <button class="btn btn-ghost btn-sm" onclick="addImgLinkRow()">+</button>
-              </div>
-            </div>
-            <p class="hint">Add up to 6 image URLs</p>
-          </div>
-          <div id="existingImages" style="display:none;margin-top:10px;"></div>
         </div>
         <div class="card" style="text-align:center;padding:28px;">
           <div class="card-title" style="margin-bottom:16px;">Preview</div>
@@ -234,11 +230,13 @@
     </div>
     <div class="card">
       <div class="card-title">Payment Split Per Order</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
-        <div class="split-box"><div class="split-pct" style="color:var(--green-d);">85%</div><div class="split-name">🏪 Your Share</div></div>
-        <div class="split-box"><div class="split-pct" style="color:var(--orange);">10%</div><div class="split-name">🚴 Delivery</div></div>
-        <div class="split-box"><div class="split-pct" style="color:var(--pink);">5%</div><div class="split-name">👑 Platform</div></div>
+      <div id="splitBreakdownContainer" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+        <div class="split-box"><div class="split-pct" id="split-seller" style="color:var(--green-d);">--%</div><div class="split-name">🏪 Your Share</div></div>
+        <div class="split-box"><div class="split-pct" id="split-delivery" style="color:var(--orange);">--%</div><div class="split-name">🚴 Delivery</div></div>
+        <div class="split-box"><div class="split-pct" id="split-platform" style="color:var(--pink);">--%</div><div class="split-name">👑 Platform</div></div>
       </div>
+      <button class="btn btn-green btn-block" onclick="requestPayout()" id="payoutBtn">Withdraw Available Funds</button>
+    </div>
       <div class="card-title">Payment History</div>
       <div id="paymentHistory"></div>
     </div>
@@ -408,14 +406,19 @@ auth.onAuthStateChanged(async user=>{
   document.getElementById('sName').textContent=CU.name||'Seller';
   document.getElementById('sAvatar').textContent=(CU.name||'S')[0].toUpperCase();
   const pill=document.getElementById('sPill');
-  if(CU.status==='active'){pill.className='s-pill pill-active';pill.textContent='Active';}
-  else document.getElementById('pendingBanner').style.display='flex';
+  if(pill){
+    if(CU.status==='active'){pill.className='s-pill pill-active';pill.textContent='Active';}
+    else document.getElementById('pendingBanner').style.display='flex';
+  }
   loadDashboard();
+  loadCategories(); // Added category loading
   initTabs('sellerProfileTabs');
   initSidebar();
   // live preview on product form
-  document.getElementById('p-name').addEventListener('input',()=>document.getElementById('prevName').textContent=document.getElementById('p-name').value||'Product Name');
-  document.getElementById('p-price').addEventListener('input',()=>document.getElementById('prevPrice').textContent=fmtINR(parseFloat(document.getElementById('p-price').value)||0));
+  const pName = document.getElementById('p-name');
+  if(pName) pName.addEventListener('input',()=>document.getElementById('prevName').textContent=document.getElementById('p-name').value||'Product Name');
+  const pPrice = document.getElementById('p-price');
+  if(pPrice) pPrice.addEventListener('input',()=>document.getElementById('prevPrice').textContent=fmtINR(parseFloat(document.getElementById('p-price').value)||0));
 });
 
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebarOverlay').classList.toggle('open');}
@@ -467,65 +470,213 @@ async function loadMyProducts(){
 function setImgTab(mode){imgMode=mode;document.getElementById('imgTabUpload').classList.toggle('active',mode==='upload');document.getElementById('imgTabLink').classList.toggle('active',mode==='link');document.getElementById('imgSectionUpload').style.display=mode==='upload'?'block':'none';document.getElementById('imgSectionLink').style.display=mode==='link'?'block':'none';}
 function addImgLinkRow(){if(imgLinkCount>=6){showToast('Max 6 images','error');return;}imgLinkCount++;const row=document.createElement('div');row.className='img-link-row';row.innerHTML=`<input class="img-link-inp" type="url" placeholder="https://…" id="imgLink${imgLinkCount-1}"/><button class="btn btn-danger btn-sm" onclick="this.parentNode.remove()">✕</button>`;document.getElementById('imgLinkInputs').appendChild(row);}
 function getPickupGPS(){document.getElementById('pickup-gps-status').textContent='Getting…';navigator.geolocation.getCurrentPosition(pos=>{document.getElementById('p-pickup-lat').value=pos.coords.latitude.toFixed(6);document.getElementById('p-pickup-lng').value=pos.coords.longitude.toFixed(6);document.getElementById('pickup-gps-status').textContent=`📍 ${pos.coords.latitude.toFixed(4)},${pos.coords.longitude.toFixed(4)}`;},err=>{document.getElementById('pickup-gps-status').textContent='GPS failed';});}
-function previewImages(){const files=Array.from(document.getElementById('p-images').files).slice(0,6);selectedImages=files;const prev=document.getElementById('imagePreview');prev.innerHTML='';files.forEach(f=>{const r=new FileReader();r.onload=e=>{const d=document.createElement('div');d.className='img-prev-item';d.innerHTML=`<img src="${e.target.result}"/><button class="img-prev-del" onclick="this.parentNode.remove()">✕</button>`;prev.appendChild(d);};r.readAsDataURL(f);});}
+async function loadCategories(){
+  try{
+    const snap = await db.collection('categories').get();
+    const cats = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    const sel = document.getElementById('p-cat');
+    if(!sel) return;
+    sel.innerHTML = cats.length ? cats.map(c=>`<option value="${c.slug}">${c.icon||'🌸'} ${c.name}</option>`).join('') : '<option value="">No categories</option>';
+  }catch(e){console.error('Error loading categories:', e);}
+}
+
+window.previewImages = function(){
+  const input = document.getElementById('p-images');
+  const files = Array.from(input.files);
+  const totalSlots = 6;
+  const currentCount = selectedImages.length + existingImgUrls.length;
+  const remaining = totalSlots - currentCount;
+  
+  if(files.length > remaining){
+    showToast(`You can only add up to 6 images in total.`,'warn');
+  }
+  
+  const newFiles = files.slice(0, remaining);
+  selectedImages = [...selectedImages, ...newFiles];
+  renderImagePreviews();
+  input.value = ''; 
+}
+
+function renderImagePreviews(){
+  const prev = document.getElementById('imagePreview');
+  prev.innerHTML = '';
+  selectedImages.forEach((file, index) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const div = document.createElement('div');
+      div.className = 'img-prev-item';
+      div.innerHTML = `<img src="${e.target.result}"/><button class="img-prev-del" onclick="removeSelectedImage(${index})">✕</button>`;
+      prev.appendChild(div);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+window.removeSelectedImage = function(index){
+  selectedImages.splice(index, 1);
+  renderImagePreviews();
+}
+
+window.removeExistingImage = function(index){
+  existingImgUrls.splice(index, 1);
+  renderExistingPreviews();
+}
+
+function renderExistingPreviews(){
+  const ex = document.getElementById('existingImages');
+  if(!existingImgUrls.length){ ex.style.display='none'; return; }
+  ex.style.display = 'block';
+  ex.innerHTML = '<div style="font-size:.8rem;font-weight:600;color:var(--gray);margin-bottom:6px;">Existing Images</div><div class="img-preview-row">' + 
+    existingImgUrls.map((u, i) => `<div class="img-prev-item"><img src="${u}"/><button class="img-prev-del" onclick="removeExistingImage(${i})">✕</button></div>`).join('') + '</div>';
+}
 
 async function saveProduct(){
-  const name=document.getElementById('p-name').value.trim();
-  const cat=document.getElementById('p-cat').value;
-  const price=parseFloat(document.getElementById('p-price').value);
-  const stock=parseInt(document.getElementById('p-stock').value);
-  const desc=document.getElementById('p-desc').value.trim();
-  const pickupAddr=document.getElementById('p-pickup-addr').value.trim();
-  const pickupCity=document.getElementById('p-pickup-city').value.trim();
-  const pickupPin=document.getElementById('p-pickup-pin').value.trim();
-  const pickupLat=parseFloat(document.getElementById('p-pickup-lat').value)||null;
-  const pickupLng=parseFloat(document.getElementById('p-pickup-lng').value)||null;
-  const editId=document.getElementById('editProdId').value;
-  if(!name||!price||!stock){showToast('Fill name, price, stock','error');return;}
-  document.getElementById('saveProdBtn').textContent='Saving…';
-  try{
-    let imageUrls=existingImgUrls||[];
-    if(imgMode==='upload'&&selectedImages.length>0){
-      imageUrls=[];
-      for(const file of selectedImages.slice(0,6)){const url=await uploadFile(file,`products/${CU.uid}/${Date.now()}_${file.name}`);imageUrls.push(url);}
-    }else if(imgMode==='link'){
-      imageUrls=[];for(let i=0;i<imgLinkCount;i++){const v=document.getElementById('imgLink'+i)?.value.trim();if(v)imageUrls.push(v);}
+  const name = document.getElementById('p-name').value.trim();
+  const cat = document.getElementById('p-cat').value;
+  const price = parseFloat(document.getElementById('p-price').value);
+  const stock = parseInt(document.getElementById('p-stock').value);
+  const desc = document.getElementById('p-desc').value.trim();
+  const pickupAddr = document.getElementById('p-pickup-addr').value.trim();
+  const pickupCity = document.getElementById('p-pickup-city').value.trim();
+  const pickupPin = document.getElementById('p-pickup-pin').value.trim();
+  const pickupLat = parseFloat(document.getElementById('p-pickup-lat').value)||null;
+  const pickupLng = parseFloat(document.getElementById('p-pickup-lng').value)||null;
+  const editId = document.getElementById('editProdId').value;
+  
+  if(!name || isNaN(price) || isNaN(stock)){
+    showToast('Please fill all required fields correctly','error');
+    return;
+  }
+  
+  const totalImgs = selectedImages.length + existingImgUrls.length;
+  if(totalImgs === 0){
+    showToast('At least 1 product image is required','warn');
+    return;
+  }
+
+  const btn = document.getElementById('saveProdBtn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  
+  try {
+    let finalImageUrls = [...existingImgUrls];
+    
+    for(let i=0; i<selectedImages.length; i++){
+      btn.textContent = `Uploading ${i+1}/${selectedImages.length}...`;
+      const file = selectedImages[i];
+      const url = await uploadFile(file, `products/${CU.uid}/${Date.now()}_${file.name}`);
+      finalImageUrls.push(url);
     }
-    if(!imageUrls.length)imageUrls=[];
-    const store=CU.store||{};
-    const data={sellerId:CU.uid,sellerName:CU.name,storeName:store.name||CU.name,
-      name,category:cat,price,stock,description:desc,images:imageUrls,
-      pickup:{address:pickupAddr,city:pickupCity,pin:pickupPin,lat:pickupLat,lng:pickupLng},
-      pickupCity,rating:0,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
-    if(editId){await db.collection('products').doc(editId).update(data);showToast('Product updated ✅');}
-    else{data.createdAt=firebase.firestore.FieldValue.serverTimestamp();await db.collection('products').add(data);showToast('Product added! 🌸');}
-    clearProdForm();showPage('products');
-  }catch(e){showToast('Error: '+e.message,'error');}
-  document.getElementById('saveProdBtn').textContent='Save Product';
+    
+    const store = CU.store||{};
+    const data = {
+      sellerId: CU.uid,
+      sellerName: CU.name,
+      storeName: store.name||CU.name,
+      name,
+      category: cat,
+      price,
+      stock,
+      description: desc,
+      images: finalImageUrls.slice(0, 6),
+      pickup: {address:pickupAddr, city:pickupCity, pin:pickupPin, lat:pickupLat, lng:pickupLng},
+      pickupCity,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    
+    if(editId){
+      await db.collection('products').doc(editId).update(data);
+      showToast('Product updated! ✅','success');
+    } else {
+      data.rating = 0;
+      data.status = 'pending';
+      data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection('products').add(data);
+      showToast('Product added for approval! ✅','success');
+    }
+    
+    selectedImages = [];
+    existingImgUrls = [];
+    document.getElementById('imagePreview').innerHTML = '';
+    document.getElementById('existingImages').innerHTML = '';
+    showPage('products');
+    loadMyProducts();
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+function clearProdForm(){
+  ['editProdId', 'p-name', 'p-price', 'p-stock', 'p-desc', 'p-pickup-addr', 'p-pickup-city', 'p-pickup-pin', 'p-pickup-lat', 'p-pickup-lng'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  document.getElementById('p-cat').value = '';
+  const title = document.getElementById('p-add-title') || document.getElementById('addProdTitle');
+  if(title) title.textContent = "➕ Add Product";
+  document.getElementById('imagePreview').innerHTML = '';
+  document.getElementById('existingImages').style.display = 'none';
+  selectedImages = [];
+  existingImgUrls = [];
+  imgLinkCount = 0;
+  if(document.getElementById('imgLinkInputs')) document.getElementById('imgLinkInputs').innerHTML = '';
+  
+  // Reset preview card
+  document.getElementById('prevName').textContent = 'Product Name';
+  document.getElementById('prevPrice').textContent = '₹0';
+  document.getElementById('prevImg').innerHTML = '🌸';
 }
 
 async function editProduct(id){
-  const snap=await db.collection('products').doc(id).get();
-  if(!snap.exists)return;
-  const p=snap.data();
-  document.getElementById('editProdId').value=id;
-  document.getElementById('addProdTitle').textContent='✏️ Edit Product';
-  document.getElementById('p-name').value=p.name||'';
-  document.getElementById('p-cat').value=p.category||'roses';
-  document.getElementById('p-price').value=p.price||'';
-  document.getElementById('p-stock').value=p.stock||'';
-  document.getElementById('p-desc').value=p.description||'';
-  document.getElementById('p-pickup-addr').value=p.pickup?.address||'';
-  document.getElementById('p-pickup-city').value=p.pickup?.city||p.pickupCity||'';
-  document.getElementById('p-pickup-pin').value=p.pickup?.pin||'';
-  existingImgUrls=p.images||[];
-  if(existingImgUrls.length){
-    const ex=document.getElementById('existingImages');ex.style.display='block';
-    ex.innerHTML='<div style="font-size:.8rem;font-weight:600;color:var(--gray);margin-bottom:6px;">Existing Images</div><div class="img-preview-row">'+existingImgUrls.map(u=>`<div class="img-prev-item"><img src="${u}"/></div>`).join('')+'</div>';}
-  showPage('addproduct');
+  try {
+    const snap = await db.collection('products').doc(id).get();
+    if(!snap.exists) return;
+    const p = snap.data();
+    
+    document.getElementById('editProdId').value = id;
+    const title = document.getElementById('p-add-title') || document.getElementById('addProdTitle');
+    if(title) title.textContent = "✏️ Edit Product";
+    document.getElementById('p-name').value = p.name || '';
+    document.getElementById('p-cat').value = p.category || '';
+    document.getElementById('p-price').value = p.price || '';
+    document.getElementById('p-stock').value = p.stock || '';
+    document.getElementById('p-desc').value = p.description || '';
+    
+    // Pickup
+    const pk = p.pickup || {};
+    document.getElementById('p-pickup-addr').value = pk.address || '';
+    document.getElementById('p-pickup-city').value = pk.city || '';
+    document.getElementById('p-pickup-pin').value = pk.pin || '';
+    document.getElementById('p-pickup-lat').value = pk.lat || '';
+    document.getElementById('p-pickup-lng').value = pk.lng || '';
+    
+    selectedImages = [];
+    existingImgUrls = p.images || [];
+    document.getElementById('imagePreview').innerHTML = '';
+    renderExistingPreviews();
+    
+    // Update live preview card
+    document.getElementById('prevName').textContent = p.name || 'Product Name';
+    document.getElementById('prevPrice').textContent = fmtINR(p.price || 0);
+    if(existingImgUrls.length > 0) {
+       document.getElementById('prevImg').innerHTML = `<img src="${existingImgUrls[0]}" style="width:100%;height:100%;object-fit:cover;"/>`;
+    }
+
+    showPage('addproduct');
+  } catch(e) { console.error(e); showToast('Error loading product','error'); }
 }
-async function deleteProd(id){if(!confirm('Delete product?'))return;await db.collection('products').doc(id).delete();showToast('Deleted');loadMyProducts();}
-function clearProdForm(){['p-name','p-price','p-stock','p-desc','p-pickup-addr','p-pickup-city','p-pickup-pin','p-pickup-lat','p-pickup-lng'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});document.getElementById('editProdId').value='';document.getElementById('addProdTitle').textContent='➕ Add Product';document.getElementById('imagePreview').innerHTML='';document.getElementById('existingImages').style.display='none';selectedImages=[];existingImgUrls=[];imgLinkCount=1;}
+
+async function deleteProd(id){
+  if(!confirm('Delete product?')) return;
+  try {
+    await db.collection('products').doc(id).delete();
+    showToast('Deleted');
+    loadMyProducts();
+  } catch(e){ showToast('Delete failed','error'); }
+}
 function catEmoji(c){return{roses:'🌹',lilies:'🌷',bouquets:'💐',seasonal:'🌻',exotic:'🌺'}[c]||'🌸';}
 
 // ORDERS
@@ -603,14 +754,59 @@ async function loadEarnings(){
   const snap=await db.collection('orders').where('sellerId','==',CU.uid).get();
   const orders=snap.docs.map(d=>d.data());
   const delivered=orders.filter(o=>o.status==='delivered');
-  const total=delivered.reduce((s,o)=>s+Math.round((o.totalAmount||0)*.85),0);
-  const pending=orders.filter(o=>!['delivered','cancelled'].includes(o.status)).reduce((s,o)=>s+Math.round((o.totalAmount||0)*.85),0);
-  document.getElementById('e-total').textContent=fmtINR(total);
-  document.getElementById('e-pending').textContent=fmtINR(pending);
-  document.getElementById('e-paid').textContent=fmtINR(Math.round(total*.95));
+
+  // Fetch dynamic fee settings
+  let sellerSplit = 0.85;
+  const feeSnap = await db.collection('settings').doc('fees').get();
+  if(feeSnap.exists){
+    const fd = feeSnap.data();
+    sellerSplit = (fd.sellerSplit || 85) / 100;
+    document.getElementById('split-seller').textContent = (sellerSplit * 100) + '%';
+    document.getElementById('split-delivery').textContent = '10%';
+    document.getElementById('split-platform').textContent = (100 - (sellerSplit*100) - 10) + '%';
+  }
+
+  const totalEarned=delivered.reduce((s,o)=>s+Math.round((o.totalAmount||0)*sellerSplit),0);
+  
+  // Get paid out total
+  const paySnap = await db.collection('payoutRequests').where('sellerId','==',CU.uid).where('status','==','approved').get();
+  const totalPaid = paySnap.docs.reduce((s, d) => s + (d.data().amount || 0), 0);
+  
+  const balance = totalEarned - totalPaid;
+
+  document.getElementById('e-total').textContent=fmtINR(totalEarned);
+  document.getElementById('e-pending').textContent=fmtINR(balance);
+  document.getElementById('e-paid').textContent=fmtINR(totalPaid);
   document.getElementById('e-orders').textContent=delivered.length;
-  const paySnap=await db.collection('payments').get();
-  document.getElementById('paymentHistory').innerHTML=paySnap.docs.length?paySnap.docs.slice(0,8).map(d=>{const p=d.data();return`<div class="info-row"><span class="info-lbl">#${(p.orderId||'').slice(-6)}</span><span class="info-val" style="color:var(--green-d);">${fmtINR(p.sellerShare||0)} <span class="badge badge-${p.status==='completed'?'delivered':'pending'}">${cap(p.status||'pending')}</span></span></div>`;}).join(''):'<div class="empty" style="padding:20px 0;"><p>No payments yet</p></div>';
+
+  document.getElementById('payoutBtn').disabled = balance <= 0;
+
+  const historySnap=await db.collection('payoutRequests').where('sellerId','==',CU.uid).orderBy('createdAt','desc').limit(10).get();
+  document.getElementById('paymentHistory').innerHTML=historySnap.docs.length?historySnap.docs.map(d=>{const p=d.data();return`<div class="info-row"><span class="info-lbl">${fmtDate(p.createdAt)}</span><span class="info-val" style="color:var(--green-d);">${fmtINR(p.amount||0)} <span class="badge badge-${p.status==='approved'?'delivered':'pending'}">${cap(p.status||'pending')}</span></span></div>`;}).join(''):'<div class="empty" style="padding:20px 0;"><p>No payout history yet</p></div>';
+}
+
+async function requestPayout() {
+  const pendingText = document.getElementById('e-pending').textContent;
+  const amount = parseInt(pendingText.replace(/[^0-9]/g, ''));
+  if(amount <= 0) return;
+  
+  if(!confirm(`Request payout for ${fmtINR(amount)}?`)) return;
+  
+  try {
+    await db.collection('payoutRequests').add({
+      sellerId: CU.uid,
+      sellerName: CU.name || CU.store?.name || 'Seller',
+      amount: amount,
+      status: 'pending',
+      method: CU.bank?.upi ? 'UPI' : 'Bank',
+      paymentInfo: CU.bank?.upi || (CU.bank?.accNo || 'Check Bank Details'),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showToast('Payout request sent! ✅');
+    loadEarnings();
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
 // PROFILE
