@@ -362,7 +362,7 @@ Then: repo **Settings** → **Pages** → Deploy from `main` branch root → **S
 
 ## 📄 License
 
-MIT © [itzgoldenheart777](https://github.com/itzgoldenheart777)
+MIT © [ns-matrix](https://github.com/ns-matrix)
 
 ---
 
